@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Petty Cash - Event Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top-nav">
+    <a class="brand" href="index.html">Event Dashboard</a>
+    <nav aria-label="Primary navigation">
+      <a href="index.html">Sales Intake</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a class="active" href="petty-cash.html">Petty Cash</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell petty-cash-shell">
+    <section class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Pre Event Release</p>
+        <h1>Petty Cash & Assigned Payouts</h1>
+      </div>
+
+      <form class="intake-form" id="pettyCashForm">
+        <section class="event-picker field">
+          <span>Select Event</span>
+          <button type="button" class="event-picker-trigger" id="eventPickerTrigger" aria-expanded="false" aria-controls="eventPickerList">
+            Choose event
+          </button>
+          <div class="event-picker-menu" id="eventPickerMenu" hidden>
+            <input type="search" id="eventSearch" placeholder="Search events">
+            <div class="event-picker-list" id="eventPickerList" role="listbox"></div>
+          </div>
+          <input type="hidden" id="selectedEventId" name="selectedEventId">
+        </section>
+
+        <label class="field">
+          <span>Preparation Date</span>
+          <input type="date" id="prepDate">
+        </label>
+
+        <section class="planning-context">
+          <div>
+            <span>Event Date</span>
+            <strong id="eventDateText">Select event</strong>
+          </div>
+          <div>
+            <span>Total Billing</span>
+            <strong id="eventBillingText">Rs. 0.00</strong>
+          </div>
+        </section>
+
+        <section class="payment-schedule" aria-labelledby="assignedPayoutsTitle">
+          <div class="schedule-header">
+            <div>
+              <p class="eyebrow">Assigned Money</p>
+              <h2 id="assignedPayoutsTitle">Person Wise Payouts</h2>
+            </div>
+            <button type="button" class="secondary-button" id="addPayout">+ Add Person</button>
+          </div>
+          <div class="cash-rows" id="payoutRows"></div>
+        </section>
+
+        <section class="payment-schedule" aria-labelledby="pettyCashTitle">
+          <div class="schedule-header">
+            <div>
+              <p class="eyebrow">Petty Cash</p>
+              <h2 id="pettyCashTitle">Small Event Expenses</h2>
+            </div>
+            <button type="button" class="secondary-button" id="addPettyCash">+ Add Expense</button>
+          </div>
+          <div class="cash-rows" id="pettyCashRows"></div>
+        </section>
+      </form>
+    </section>
+
+    <aside class="summary-panel" aria-live="polite">
+      <p class="eyebrow">Release Summary</p>
+      <h2>Total Cash Required</h2>
+      <output id="totalCashRequired">Rs. 0.00</output>
+
+      <dl>
+        <div>
+          <dt>Assigned Payouts</dt>
+          <dd id="assignedTotal">Rs. 0.00</dd>
+        </div>
+        <div>
+          <dt>Petty Cash</dt>
+          <dd id="pettyTotal">Rs. 0.00</dd>
+        </div>
+        <div>
+          <dt>Total Billing</dt>
+          <dd id="summaryBilling">Rs. 0.00</dd>
+        </div>
+        <div style="border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px;">
+          <dt style="font-weight: 700; color: var(--ink);">Billing After Release</dt>
+          <dd id="billingAfterRelease" style="font-weight: 800;">Rs. 0.00</dd>
+        </div>
+      </dl>
+    </aside>
+  </main>
+
+  <script src="store.js?v=3"></script>
+  <script src="data.js?v=3"></script>
+  <script src="event-store.js?v=3"></script>
+  <script src="master-data.js?v=3"></script>
+  <script src="petty-cash.js?v=3"></script>
+</body>
+</html>

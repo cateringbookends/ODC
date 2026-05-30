@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Master Persons - Event Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top-nav">
+    <a class="brand" href="index.html">Event Dashboard</a>
+    <nav aria-label="Primary navigation">
+      <a href="index.html">Sales Intake</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a class="active" href="master-persons.html">Master Persons</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell planning-shell">
+    <section class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Master Setup</p>
+        <h1>Assigned Heads & Persons</h1>
+      </div>
+
+      <form class="intake-form" id="masterPersonsForm">
+        <label class="field">
+          <span>Head Name</span>
+          <input type="text" id="headName" placeholder="Operations Head">
+        </label>
+
+        <label class="field">
+          <span>Person Name</span>
+          <input type="text" id="personName" placeholder="Assigned person">
+        </label>
+
+        <section class="payment-schedule">
+          <div class="schedule-header">
+            <div>
+              <p class="eyebrow">Directory</p>
+              <h2>Person Wise Master</h2>
+            </div>
+            <button type="button" class="secondary-button" id="addPerson">+ Add Person</button>
+          </div>
+
+          <div class="master-list" id="masterList"></div>
+        </section>
+      </form>
+    </section>
+  </main>
+
+  <script src="store.js?v=3"></script>
+  <script src="master-data.js?v=3"></script>
+  <script src="master-persons.js?v=3"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Runtime SQLite database (regenerated from schema.sql on first run)
+odc.db
+odc.db-journal
+odc.db-wal
+odc.db-shm
+
+# Dependencies (none currently; zero-dep server)
+node_modules/
+
+# Playwright CLI session logs / artifacts
+.playwright-cli/
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+*.log

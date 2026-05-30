@@ -1,0 +1,14 @@
+{
+  "name": "odc-event-dashboard",
+  "version": "1.0.0",
+  "description": "ODC Sales Event Dashboard — static front-end + zero-dependency Node/SQLite server with live reload.",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node smoke-test.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

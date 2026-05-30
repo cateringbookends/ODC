@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Sales Event Dashboard - Sales Intake</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top-nav">
+    <a class="brand" href="index.html">Event Dashboard</a>
+    <nav aria-label="Primary navigation">
+      <a class="active" href="index.html">Sales Intake</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell sales-shell">
+    <!-- Left Workspace Panel -->
+    <section class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Sales Intake</p>
+        <h1>Client Event Billing</h1>
+      </div>
+
+      <form class="intake-form" id="salesForm">
+        <label class="field">
+          <span>Entry Date</span>
+          <input type="date" id="entryDate" name="entryDate" required>
+        </label>
+
+        <label class="field">
+          <span>Event Date</span>
+          <input type="date" id="eventDate" name="eventDate" required>
+        </label>
+
+        <label class="field">
+          <span>Event Time</span>
+          <input type="time" id="eventTime" name="eventTime">
+        </label>
+
+        <label class="field" style="grid-column: span 2;">
+          <span>Event Name</span>
+          <input type="text" id="eventName" name="eventName" placeholder="Wedding reception, Tech Summit" required>
+        </label>
+
+        <label class="field" style="grid-column: span 2;">
+          <span>Location</span>
+          <input type="text" id="location" name="location" placeholder="Venue, hotel or city" required>
+        </label>
+
+        <label class="field">
+          <span>PAX <small>No. of plates</small></span>
+          <input type="number" id="pax" name="pax" min="0" step="1" placeholder="0" required>
+        </label>
+
+        <label class="field">
+          <span>No. of Days</span>
+          <input type="number" id="eventDays" name="eventDays" min="1" step="1" value="1" required>
+        </label>
+
+        <label class="field" style="grid-column: span 2;">
+          <span>Cost per PAX</span>
+          <input type="number" id="costPerPax" name="costPerPax" min="0" step="0.01" placeholder="0.00" required>
+        </label>
+
+        <label class="field">
+          <span>Food Type</span>
+          <select id="foodType" name="foodType">
+            <option value="">Select</option>
+            <option value="jain">Jain</option>
+            <option value="non-jain">Non-Jain</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Allergic / Special Diet <small>no. of persons</small></span>
+          <input type="number" id="allergicCount" name="allergicCount" min="0" step="1" placeholder="0">
+        </label>
+
+        <label class="field" style="grid-column: span 2;">
+          <span>Allergy / Precaution Notes <small>what to avoid</small></span>
+          <textarea id="allergicNotes" name="allergicNotes" rows="2" placeholder="e.g. 5 guests no nuts, 2 no dairy, avoid shellfish"></textarea>
+        </label>
+
+        <section class="payment-schedule" aria-labelledby="paymentScheduleTitle">
+          <div class="schedule-header">
+            <div>
+              <p class="eyebrow">Payment Plan</p>
+              <h2 id="paymentScheduleTitle">Billing Cycles</h2>
+            </div>
+            <div class="schedule-actions">
+              <button type="button" class="secondary-button" id="addPayment">+ Add Cycle</button>
+              <button type="button" class="primary-button" id="saveEvent">Save Event</button>
+            </div>
+          </div>
+
+          <div class="payment-rows" id="paymentRows">
+            <!-- Dynamic payment rows will be inserted here -->
+          </div>
+
+          <p class="form-status" id="saveStatus" aria-live="polite"></p>
+        </section>
+
+        <section class="payment-schedule" aria-labelledby="savedEventsTitle">
+          <div class="schedule-header">
+            <div>
+              <p class="eyebrow">Saved Work</p>
+              <h2 id="savedEventsTitle">Saved Events</h2>
+            </div>
+          </div>
+          <div class="saved-events-list" id="savedEventsList"></div>
+        </section>
+      </form>
+    </section>
+
+    <!-- Middle KYC / Invoice Panel -->
+    <aside class="kyc-panel invoice-panel" id="invoicePanel" hidden>
+      <div class="invoice-header">
+        <p class="eyebrow" style="color: #3b82f6;">Online Only</p>
+        <h2>Invoice / KYC Details</h2>
+      </div>
+
+      <details class="invoice-details" open>
+        <summary>Client Details</summary>
+        <div class="invoice-kyc-fields" id="invoiceKycFields">
+          <label>
+            <span>Client / Company Name</span>
+            <input type="text" id="invoiceName" placeholder="Invoice name">
+          </label>
+          <label>
+            <span>Mobile Number</span>
+            <input type="tel" id="invoiceMobile" inputmode="numeric" maxlength="10" placeholder="10 digit mobile" title="10-digit mobile number">
+          </label>
+          <label>
+            <span>Email</span>
+            <input type="email" id="invoiceEmail" maxlength="120" placeholder="invoice@example.com">
+          </label>
+          <label>
+            <span>GST Number</span>
+            <input type="text" id="invoiceGst" maxlength="15" placeholder="GSTIN" title="15-character GSTIN" style="text-transform:uppercase">
+          </label>
+          <label>
+            <span>PAN Number</span>
+            <input type="text" id="invoicePan" maxlength="10" placeholder="PAN" title="10-character PAN (ABCDE1234F)" style="text-transform:uppercase">
+          </label>
+          <label>
+            <span>Aadhar Number</span>
+            <input type="text" id="invoiceAadhar" inputmode="numeric" maxlength="12" placeholder="Aadhar" title="12-digit Aadhaar number">
+          </label>
+        </div>
+      </details>
+
+      <div class="invoice-lines" id="invoiceLines"></div>
+      
+      <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
+        <div class="invoice-total invoice-subtotal">
+          <span>Online Subtotal</span>
+          <strong id="invoiceSubtotal">Rs. 0.00</strong>
+        </div>
+        <div class="invoice-total invoice-subtotal">
+          <span>GST 5%</span>
+          <strong id="invoiceGstAmount">Rs. 0.00</strong>
+        </div>
+        <div class="invoice-total">
+          <span>Invoice Total</span>
+          <strong id="invoiceTotal">Rs. 0.00</strong>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right Summary Panel -->
+    <aside class="summary-panel" aria-live="polite">
+      <p class="eyebrow">Auto Calculated</p>
+      <h2>Total Billing</h2>
+      <output id="totalBilling">Rs. 0.00</output>
+      
+      <dl>
+        <div>
+          <dt>PAX</dt>
+          <dd id="summaryPax">0</dd>
+        </div>
+        <div>
+          <dt>Cost per PAX</dt>
+          <dd id="summaryCost">Rs. 0.00</dd>
+        </div>
+        <div>
+          <dt>Cash Scheduled</dt>
+          <dd id="cashScheduled">Rs. 0.00</dd>
+        </div>
+        <div>
+          <dt>Online Scheduled</dt>
+          <dd id="onlineScheduled">Rs. 0.00</dd>
+        </div>
+        <div>
+          <dt>Online GST 5%</dt>
+          <dd id="onlineGst">Rs. 0.00</dd>
+        </div>
+        <div>
+          <dt>Minimum Advance</dt>
+          <dd id="minimumAdvance">Rs. 0.00</dd>
+        </div>
+        <div>
+          <dt>Advance Due Date</dt>
+          <dd id="advanceDueDate">Select event date</dd>
+        </div>
+        <div>
+          <dt>Scheduled Total</dt>
+          <dd id="scheduledTotal">Rs. 0.00</dd>
+        </div>
+        <div style="border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px;">
+          <dt style="font-weight: 700; color: var(--ink);">Balance Pending</dt>
+          <dd id="balancePending" style="font-weight: 800;">Rs. 0.00</dd>
+        </div>
+      </dl>
+
+      <section class="precautions-card">
+        <p class="eyebrow">Catering Precautions</p>
+        <dl>
+          <div>
+            <dt>Food Type</dt>
+            <dd id="summaryFoodType">—</dd>
+          </div>
+          <div>
+            <dt>Allergic Persons</dt>
+            <dd id="summaryAllergicCount">0</dd>
+          </div>
+        </dl>
+        <p class="precaution-notes" id="summaryAllergicNotes"></p>
+      </section>
+
+    </aside>
+  </main>
+
+  <script src="store.js?v=3"></script>
+  <script src="data.js?v=3"></script>
+  <script src="event-store.js?v=3"></script>
+  <script src="app.js?v=3"></script>
+</body>
+</html>
