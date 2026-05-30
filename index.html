@@ -12,6 +12,7 @@
     <a class="brand" href="index.html">Event Dashboard</a>
     <nav aria-label="Primary navigation">
       <a class="active" href="index.html">Sales Intake</a>
+      <a href="saved-events.html">Saved Events</a>
       <a href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
       <a href="master-persons.html">Master Persons</a>
@@ -28,29 +29,48 @@
       </div>
 
       <form class="intake-form" id="salesForm">
-        <label class="field">
-          <span>Entry Date</span>
-          <input type="date" id="entryDate" name="entryDate" required>
-        </label>
+        <div class="date-row">
+          <label class="field">
+            <span>Entry Date</span>
+            <input type="text" class="date-dmy" id="entryDate" name="entryDate" placeholder="DD-MM-YYYY" autocomplete="off" required>
+          </label>
 
-        <label class="field">
-          <span>Event Date</span>
-          <input type="date" id="eventDate" name="eventDate" required>
-        </label>
+          <label class="field">
+            <span>Event Date</span>
+            <input type="text" class="date-dmy" id="eventDate" name="eventDate" placeholder="DD-MM-YYYY" autocomplete="off" required>
+          </label>
 
-        <label class="field">
-          <span>Event Time</span>
-          <input type="time" id="eventTime" name="eventTime">
-        </label>
+          <label class="field">
+            <span>Event Time</span>
+            <div class="time-12" id="eventTime">
+              <select class="t-hour" aria-label="Hour"></select>
+              <span class="t-sep">:</span>
+              <select class="t-min" aria-label="Minute"></select>
+              <select class="t-ampm" aria-label="AM/PM">
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </div>
+          </label>
+        </div>
 
         <label class="field" style="grid-column: span 2;">
           <span>Event Name</span>
           <input type="text" id="eventName" name="eventName" placeholder="Wedding reception, Tech Summit" required>
         </label>
 
-        <label class="field" style="grid-column: span 2;">
+        <label class="field">
           <span>Location</span>
           <input type="text" id="location" name="location" placeholder="Venue, hotel or city" required>
+        </label>
+
+        <label class="field">
+          <span>Zone <small>unlocks city features</small></span>
+          <select id="locationZone" name="locationZone">
+            <option value="surat">Surat</option>
+            <option value="ahmedabad">Ahmedabad</option>
+            <option value="other" selected>Other (outstation)</option>
+          </select>
         </label>
 
         <label class="field">
@@ -95,6 +115,7 @@
             </div>
             <div class="schedule-actions">
               <button type="button" class="secondary-button" id="addPayment">+ Add Cycle</button>
+              <button type="button" class="secondary-button" id="newEvent">New</button>
               <button type="button" class="primary-button" id="saveEvent">Save Event</button>
             </div>
           </div>
@@ -104,16 +125,7 @@
           </div>
 
           <p class="form-status" id="saveStatus" aria-live="polite"></p>
-        </section>
-
-        <section class="payment-schedule" aria-labelledby="savedEventsTitle">
-          <div class="schedule-header">
-            <div>
-              <p class="eyebrow">Saved Work</p>
-              <h2 id="savedEventsTitle">Saved Events</h2>
-            </div>
-          </div>
-          <div class="saved-events-list" id="savedEventsList"></div>
+          <p class="form-status"><a href="saved-events.html">View all saved events &rarr;</a></p>
         </section>
       </form>
     </section>

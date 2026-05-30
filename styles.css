@@ -1125,3 +1125,38 @@ dd {
 .precaution-notes:empty {
   display: none;
 }
+
+/* --- v3: date row (full-screen horizontal dates+time), 12h time control, zone --- */
+.date-row {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+@media (max-width: 720px) {
+  .date-row { grid-template-columns: 1fr; }
+}
+.time-12 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.time-12 select {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 8px;
+}
+.time-12 .t-ampm { flex: 0 0 auto; }
+.time-12 .t-sep { color: var(--muted); font-weight: 700; }
+input.invalid-date {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+.precaution-tag {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #b45309;
+}

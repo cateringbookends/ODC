@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
-  <title>FAQ - Event Dashboard</title>
+  <title>Saved Events - Event Dashboard</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,38 +12,34 @@
     <a class="brand" href="index.html">Event Dashboard</a>
     <nav aria-label="Primary navigation">
       <a href="index.html">Sales Intake</a>
-      <a href="saved-events.html">Saved Events</a>
+      <a class="active" href="saved-events.html">Saved Events</a>
       <a href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
       <a href="master-persons.html">Master Persons</a>
-      <a class="active" href="faq.html">FAQ</a>
+      <a href="faq.html">FAQ</a>
     </nav>
   </header>
 
   <main class="app-shell planning-shell">
-    <section class="panel planning-panel">
+    <section class="panel">
       <div class="panel-header">
-        <p class="eyebrow">Help Center</p>
-        <h1>FAQ</h1>
+        <p class="eyebrow">Saved Work</p>
+        <h1>Saved Events</h1>
       </div>
 
-      <section class="faq-list" aria-label="Frequently asked questions">
-        <details open>
-          <summary>When is KYC required?</summary>
-          <p>KYC details are required only when at least one payment cycle is marked Online.</p>
-        </details>
+      <div class="saved-controls">
+        <input type="search" id="savedSearch" class="saved-search" placeholder="Search by name, location or ID">
+        <button type="button" class="secondary-button" id="newEventLink">+ New Event</button>
+        <button type="button" class="secondary-button" id="exportCsv">Export CSV</button>
+      </div>
 
-        <details>
-          <summary>Can advance be less or more than 50%?</summary>
-          <p>Yes. The advance starts at 50% by default, but the amount is editable.</p>
-        </details>
-
-        <details>
-          <summary>Can one event have both Cash and Online payments?</summary>
-          <p>Yes. Each billing cycle has its own billing mode, so payments can be split across Cash and Online.</p>
-        </details>
-      </section>
+      <div class="saved-events-list" id="savedEventsList"></div>
     </section>
   </main>
+
+  <script src="store.js?v=3"></script>
+  <script src="data.js?v=3"></script>
+  <script src="event-store.js?v=3"></script>
+  <script src="saved-events.js?v=3"></script>
 </body>
 </html>

@@ -34,7 +34,8 @@ function migrate() {
     "ALTER TABLE events ADD COLUMN event_time TEXT",
     "ALTER TABLE events ADD COLUMN food_type TEXT",
     "ALTER TABLE events ADD COLUMN allergic_count INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE events ADD COLUMN allergic_notes TEXT"
+    "ALTER TABLE events ADD COLUMN allergic_notes TEXT",
+    "ALTER TABLE events ADD COLUMN location_zone TEXT"
   ];
   for (const sql of stmts) {
     try { db.exec(sql); } catch { /* column already exists */ }
@@ -91,6 +92,7 @@ function mapEventRow(row) {
     foodType: row.food_type || "",
     allergicCount: row.allergic_count || 0,
     allergicNotes: row.allergic_notes || "",
+    locationZone: row.location_zone || "other",
     paymentSchedule: cycles.map((c) => ({
       label: c.cycle_name,
       dueDate: c.due_date || "",
@@ -135,6 +137,8 @@ function validateEvent(e) {
   if (!["open", "planning", "completed", "cancelled"].includes(status)) errors.push("Invalid status.");
   const foodType = s(e.foodType);
   if (foodType && !["jain", "non-jain"].includes(foodType)) errors.push("Food type must be Jain or Non-Jain.");
+  const zone = s(e.locationZone);
+  if (zone && !["surat", "ahmedabad", "other"].includes(zone)) errors.push("Zone must be Surat, Ahmedabad or Other.");
   if (e.allergicCount !== undefined && e.allergicCount !== null && e.allergicCount !== "" && !(Number(e.allergicCount) >= 0)) errors.push("Allergic count must be 0 or more.");
 
   const k = e.invoiceKyc || {};
@@ -171,6 +175,8 @@ function upsertEvent(e) {
   const foodType = (e.foodType && String(e.foodType).trim()) || null;
   const allergicCount = Math.max(Math.floor(Number(e.allergicCount) || 0), 0);
   const allergicNotes = (e.allergicNotes != null ? String(e.allergicNotes).trim() : "") || null;
+  const zoneRaw = (e.locationZone && String(e.locationZone).trim()) || "other";
+  const locationZone = ["surat", "ahmedabad", "other"].includes(zoneRaw) ? zoneRaw : "other";
 
   db.exec("BEGIN");
   try {
@@ -178,16 +184,16 @@ function upsertEvent(e) {
     let eventId;
     if (existing) {
       db.prepare(
-        `UPDATE events SET external_id=?, entry_date=?, event_date=?, event_name=?, location=?, pax=?, event_days=?, cost_per_pax=?, total_billing=?, status=?, event_time=?, food_type=?, allergic_count=?, allergic_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
-      ).run(e.externalId || existing.external_id, e.entryDate || "", e.date, e.name.trim(), e.location.trim(), pax, days, costPerPax, totalBilling, status, eventTime, foodType, allergicCount, allergicNotes, existing.id);
+        `UPDATE events SET external_id=?, entry_date=?, event_date=?, event_name=?, location=?, pax=?, event_days=?, cost_per_pax=?, total_billing=?, status=?, event_time=?, food_type=?, allergic_count=?, allergic_notes=?, location_zone=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).run(e.externalId || existing.external_id, e.entryDate || "", e.date, e.name.trim(), e.location.trim(), pax, days, costPerPax, totalBilling, status, eventTime, foodType, allergicCount, allergicNotes, locationZone, existing.id);
       eventId = existing.id;
       db.prepare("DELETE FROM payment_cycles WHERE event_id = ?").run(eventId);
       db.prepare("DELETE FROM invoice_kyc WHERE event_id = ?").run(eventId);
     } else {
       const info = db.prepare(
-        `INSERT INTO events (client_id, external_id, entry_date, event_date, event_name, location, pax, event_days, cost_per_pax, total_billing, status, event_time, food_type, allergic_count, allergic_notes)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-      ).run(clientId, e.externalId || "", e.entryDate || "", e.date, e.name.trim(), e.location.trim(), pax, days, costPerPax, totalBilling, status, eventTime, foodType, allergicCount, allergicNotes);
+        `INSERT INTO events (client_id, external_id, entry_date, event_date, event_name, location, pax, event_days, cost_per_pax, total_billing, status, event_time, food_type, allergic_count, allergic_notes, location_zone)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      ).run(clientId, e.externalId || "", e.entryDate || "", e.date, e.name.trim(), e.location.trim(), pax, days, costPerPax, totalBilling, status, eventTime, foodType, allergicCount, allergicNotes, locationZone);
       eventId = info.lastInsertRowid;
     }
 

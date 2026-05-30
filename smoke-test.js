@@ -41,10 +41,11 @@ async function api(method, path, body) {
     days: 2,
     costPerPax: 500,
     status: "open",
-    time: "18:30",
+    time: "6:30 PM",
     foodType: "jain",
     allergicCount: 7,
     allergicNotes: "5 no nuts, 2 no dairy",
+    locationZone: "surat",
     paymentSchedule: [
       { label: "Advance", dueDate: "2026-08-12", amount: 50000, billing: "cash", method: "UPI", isAdvance: true },
       { label: "Balance", dueDate: "2026-08-15", amount: 50000, billing: "online", method: "Card", isAdvance: false }
@@ -57,11 +58,13 @@ async function api(method, path, body) {
   check("payment schedule round-trips with isAdvance", r.json && r.json.paymentSchedule.length === 2 && r.json.paymentSchedule[0].isAdvance === true);
   check("online method preserved", r.json && r.json.paymentSchedule[1].method === "Card");
   check("KYC mapped back (camelCase)", r.json && r.json.invoiceKyc.pan === "ABCDE1234F" && r.json.invoiceKyc.aadhar === "123456789012");
-  check("new fields round-trip (time/food/allergic)", r.json && r.json.time === "18:30" && r.json.foodType === "jain" && r.json.allergicCount === 7 && r.json.allergicNotes === "5 no nuts, 2 no dairy", JSON.stringify({ t: r.json && r.json.time, f: r.json && r.json.foodType, c: r.json && r.json.allergicCount }));
+  check("new fields round-trip (time/food/allergic/zone)", r.json && r.json.time === "6:30 PM" && r.json.foodType === "jain" && r.json.allergicCount === 7 && r.json.allergicNotes === "5 no nuts, 2 no dairy" && r.json.locationZone === "surat", JSON.stringify({ t: r.json && r.json.time, f: r.json && r.json.foodType, c: r.json && r.json.allergicCount, z: r.json && r.json.locationZone }));
 
-  // invalid food type rejected
+  // invalid food type / zone rejected
   r = await api("POST", "/api/events", { ...payload, id: id + "-badfood", foodType: "vegan" });
   check("invalid foodType -> 400", r.status === 400, JSON.stringify(r.json));
+  r = await api("POST", "/api/events", { ...payload, id: id + "-badzone", locationZone: "mumbai" });
+  check("invalid zone -> 400", r.status === 400, JSON.stringify(r.json));
   r = await api("POST", "/api/events", payload); // re-create the canonical test event for later steps
 
   // 3. event listed

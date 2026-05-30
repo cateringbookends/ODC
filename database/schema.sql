@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS events (
   food_type TEXT CHECK (food_type IS NULL OR food_type IN ('jain', 'non-jain')),
   allergic_count INTEGER NOT NULL DEFAULT 0,
   allergic_notes TEXT,
+  location_zone TEXT CHECK (location_zone IS NULL OR location_zone IN ('surat', 'ahmedabad', 'other')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -20,14 +20,15 @@ Endpoints:
 ## Pages (html ↔ controller js)
 | Page | HTML | JS controller | Purpose |
 |---|---|---|---|
-| Sales Intake (home) | `index.html` | `app.js` | Event intake, billing, payment schedule, online invoice+KYC, **save/edit/delete, status, search, CSV export**; event time, food type (jain/non-jain), allergic count + notes → live "Precautions" readout |
+| Sales Intake (home) | `index.html` | `app.js` | Event intake, billing, payment schedule, online invoice+KYC; **DD-MM-YYYY masked date fields** (Entry/Event date + 12h time on one row at desktop), food type (jain/non-jain), allergic count + notes → live "Precautions" readout, **Zone** (Surat/Ahmedabad/Other). "New" clears form; `?edit=<id>` deep-link loads an event for editing |
+| Saved Events | `saved-events.html` | `saved-events.js` | Lists all saved events (search, status change, CSV export, delete); **Edit** → `index.html?edit=<id>`. Moved here out of Sales Intake |
 | Pre Cost Planning | `pre-cost-planning.html` | `pre-cost-planning.js` | Pick event, enter costs → total cost & profit/loss, **Save Plan** (persists) |
 | Petty Cash | `petty-cash.html` | `petty-cash.js` | Pick event, payouts + petty expenses → cash vs billing, **Save Petty Cash** (persists) |
 | Master Persons | `master-persons.html` | `master-persons.js` | CRUD heads & persons |
 | FAQ | `faq.html` | — | Static help |
 
 ## Client data layer (globals; load order matters)
-- `store.js` (**loaded first everywhere**) → `window.ODC`: `api()`, `escapeHtml()`, `lsGet/lsSet` cache, `addBoot/registerSync/notifySync`, and `ready` (promise; resolves after first server hydration on `DOMContentLoaded`). Pages defer init via `ODC.ready.then(init)` and re-render via `ODC.registerSync(...)`.
+- `store.js` (**loaded first everywhere**) → `window.ODC`: `api()`, `escapeHtml()`, `lsGet/lsSet` cache, `addBoot/registerSync/notifySync`, `ready` (promise; resolves after first server hydration on `DOMContentLoaded`), and strict date helpers `dmyToIso()`/`isoToDmy()`/`attachDateMask(input)` (form date fields are DD-MM-YYYY text — native `<input type=date>` shows OS-locale format so it was replaced). Pages defer init via `ODC.ready.then(init)` and re-render via `ODC.registerSync(...)`.
 - `data.js` → `window.ODC_DATA` `{events[], defaults{gstRate .05, advanceRate .5, decorRate .05, staffCostPerDay 1000}}` — now only an **offline first-run fallback** (server is source of truth).
 - `event-store.js` → events cache + API: `getSavedEvents/getAllEvents/getEventById/createEventId/createExternalId/upsertEvent/deleteEvent` + `getPettyCash/savePettyCash/getPreCost/savePreCost`. Key `odcSavedEvents`.
 - `master-data.js` → `getMasterPersons/saveMasterPersons` (cache + `/api/master-persons`). Key `odcMasterPersons`.
@@ -35,6 +36,7 @@ Endpoints:
 ## Load order per page (`store.js` first; cache-bust `?v=3`)
 ```
 store → data → event-store → app                      (index.html)
+store → data → event-store → saved-events              (saved-events.html)
 store → data → event-store → pre-cost-planning         (pre-cost-planning.html)
 store → data → event-store → master-data → petty-cash  (petty-cash.html)
 store → master-data → master-persons                   (master-persons.html)
@@ -54,8 +56,8 @@ store → master-data → master-persons                   (master-persons.html)
 
 ## DB (`database/schema.sql`, SQLite, FKs ON) — now wired to the app
 Root `events`; children FK → `events.id ON DELETE CASCADE`. Added `client_id TEXT UNIQUE` (the app's string id) so the app id model maps cleanly.
-- `events` (+`event_time`, `food_type` jain|non-jain, `allergic_count`, `allergic_notes` — server `migrate()` ALTERs these into pre-existing DBs), `payment_cycles`(+`is_advance`), `invoice_kyc`(1:1), `invoices`, `pre_cost_plans`/`pre_cost_items` (generic, unused by app).
+- `events` (+`event_time` [12h string e.g. "6:30 PM"], `food_type` jain|non-jain, `allergic_count`, `allergic_notes`, `location_zone` surat|ahmedabad|other — server `migrate()` ALTERs these into pre-existing DBs), `payment_cycles`(+`is_advance`), `invoice_kyc`(1:1), `invoices`, `pre_cost_plans`/`pre_cost_items` (generic, unused by app).
 - **Added:** `master_heads` + `master_persons`, `petty_cash_rows`(payout|petty), `pre_cost_inputs`(1:1 fixed cost fields).
 
 ## Files
-`server.js` `store.js` `package.json` `smoke-test.js` `browser-check.js` `odc.db`(gitignore-worthy, regenerated) + the 5 html / 7 client js / `styles.css` / `database/{schema,queries}.sql` + `README.md`.
+`server.js` `store.js` `package.json` `smoke-test.js` `browser-check.js` `odc.db`(gitignored, regenerated) + 6 html (incl. `saved-events.html`) / 8 client js (incl. `saved-events.js`) / `styles.css` / `database/{schema,queries}.sql` + `README.md`.

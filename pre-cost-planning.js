@@ -221,6 +221,7 @@ document.addEventListener("click", (event) => { if (!event.target.closest(".even
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu({ restoreFocus: true }); });
 
 function init() {
+  document.querySelectorAll(".date-dmy").forEach((el) => ODC.attachDateMask(el));
   ensureSaveBar();
   renderEvents();
   updatePlanningContext();

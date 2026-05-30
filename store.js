@@ -37,6 +37,40 @@ window.ODC = (function () {
     return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ESC[c]);
   }
 
+  // ---- Strict DD-MM-YYYY date handling (browser-independent; native <input type=date> shows OS locale) ----
+  function dmyToIso(dmy) {
+    const m = String(dmy == null ? "" : dmy).trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (!m) return "";
+    const d = Number(m[1]), mo = Number(m[2]), y = Number(m[3]);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+    const iso = `${m[3]}-${m[2]}-${m[1]}`;
+    const dt = new Date(`${iso}T00:00:00`);
+    if (dt.getFullYear() !== y || dt.getMonth() + 1 !== mo || dt.getDate() !== d) return ""; // rejects 31-02 etc.
+    return iso;
+  }
+  function isoToDmy(iso) {
+    const m = String(iso == null ? "" : iso).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+  }
+  // Turn a text input into an auto-formatting DD-MM-YYYY field (digits -> DD-MM-YYYY).
+  function attachDateMask(input) {
+    if (!input || input.dataset.dmyMask) return;
+    input.dataset.dmyMask = "1";
+    input.setAttribute("inputmode", "numeric");
+    input.setAttribute("maxlength", "10");
+    if (!input.placeholder) input.placeholder = "DD-MM-YYYY";
+    const reformat = () => {
+      const digits = input.value.replace(/\D/g, "").slice(0, 8);
+      let out = digits.slice(0, 2);
+      if (digits.length > 2) out += "-" + digits.slice(2, 4);
+      if (digits.length > 4) out += "-" + digits.slice(4, 8);
+      input.value = out;
+      input.classList.toggle("invalid-date", input.value.length === 10 && !dmyToIso(input.value));
+    };
+    input.addEventListener("input", reformat);
+    input.addEventListener("blur", () => input.classList.toggle("invalid-date", !!input.value && !dmyToIso(input.value)));
+  }
+
   function lsGet(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -71,5 +105,5 @@ window.ODC = (function () {
   // Boot after all in-body scripts (and their addBoot/registerSync calls) have run.
   window.addEventListener("DOMContentLoaded", boot);
 
-  return { ready, api, escapeHtml, lsGet, lsSet, addBoot, registerSync, notifySync, isOnline: () => online };
+  return { ready, api, escapeHtml, dmyToIso, isoToDmy, attachDateMask, lsGet, lsSet, addBoot, registerSync, notifySync, isOnline: () => online };
 })();

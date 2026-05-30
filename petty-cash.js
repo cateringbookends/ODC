@@ -82,7 +82,7 @@ function renderEvents(query = "") {
       selectedEvent = event;
       selectedEventId.value = event.id;
       trigger.textContent = event.name;
-      prepDate.value = getOneDayBefore(event.date);
+      prepDate.value = ODC.isoToDmy(getOneDayBefore(event.date));
       updateEventContext();
       loadPettyCash(event.id);
       closeMenu();
@@ -274,6 +274,7 @@ document.addEventListener("click", (event) => { if (!event.target.closest(".even
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu({ restoreFocus: true }); });
 
 function init() {
+  document.querySelectorAll(".date-dmy").forEach((el) => ODC.attachDateMask(el));
   masterHeads = getMasterPersons();
   ensureSaveBar();
   createCashRow(payoutRows, "payout");
