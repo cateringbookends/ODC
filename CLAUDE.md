@@ -20,7 +20,7 @@ Endpoints:
 ## Pages (html ↔ controller js)
 | Page | HTML | JS controller | Purpose |
 |---|---|---|---|
-| Sales Intake (home) | `index.html` | `app.js` | Event intake, billing, payment schedule, online invoice+KYC, **save/edit/delete, status, search, CSV export** |
+| Sales Intake (home) | `index.html` | `app.js` | Event intake, billing, payment schedule, online invoice+KYC, **save/edit/delete, status, search, CSV export**; event time, food type (jain/non-jain), allergic count + notes → live "Precautions" readout |
 | Pre Cost Planning | `pre-cost-planning.html` | `pre-cost-planning.js` | Pick event, enter costs → total cost & profit/loss, **Save Plan** (persists) |
 | Petty Cash | `petty-cash.html` | `petty-cash.js` | Pick event, payouts + petty expenses → cash vs billing, **Save Petty Cash** (persists) |
 | Master Persons | `master-persons.html` | `master-persons.js` | CRUD heads & persons |
@@ -54,7 +54,7 @@ store → master-data → master-persons                   (master-persons.html)
 
 ## DB (`database/schema.sql`, SQLite, FKs ON) — now wired to the app
 Root `events`; children FK → `events.id ON DELETE CASCADE`. Added `client_id TEXT UNIQUE` (the app's string id) so the app id model maps cleanly.
-- `events`, `payment_cycles`(+`is_advance`), `invoice_kyc`(1:1), `invoices`, `pre_cost_plans`/`pre_cost_items` (generic, unused by app).
+- `events` (+`event_time`, `food_type` jain|non-jain, `allergic_count`, `allergic_notes` — server `migrate()` ALTERs these into pre-existing DBs), `payment_cycles`(+`is_advance`), `invoice_kyc`(1:1), `invoices`, `pre_cost_plans`/`pre_cost_items` (generic, unused by app).
 - **Added:** `master_heads` + `master_persons`, `petty_cash_rows`(payout|petty), `pre_cost_inputs`(1:1 fixed cost fields).
 
 ## Files
