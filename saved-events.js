@@ -5,8 +5,6 @@ const newEventLink = document.querySelector("#newEventLink");
 
 const moneyFormatter = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const STATUSES = ["open", "planning", "completed", "cancelled"];
-const ZONE_LABELS = { surat: "Surat", ahmedabad: "Ahmedabad", other: "Other" };
-
 let query = "";
 
 function eventsMatching() {
@@ -20,7 +18,7 @@ function metaLine(event) {
   const parts = [event.externalId, ODC.isoToDmy(event.date) || "No date"];
   if (event.time) parts.push(event.time);
   parts.push(event.location);
-  if (event.locationZone && event.locationZone !== "other") parts.push(ZONE_LABELS[event.locationZone]);
+  if (event.locationZone) parts.push(event.locationZone);
   return parts.join(" | ");
 }
 
@@ -85,10 +83,17 @@ function renderList() {
     delBtn.type = "button";
     delBtn.className = "secondary-button danger";
     delBtn.textContent = "Delete";
-    delBtn.addEventListener("click", () => {
+    delBtn.addEventListener("click", async () => {
       if (!confirm(`Delete ${event.externalId} — ${event.name}?`)) return;
-      deleteEvent(event.id);
-      renderList();
+      delBtn.disabled = true;
+      try {
+        await deleteEvent(event.id);
+        renderList();
+      } catch (err) {
+        alert(`Delete failed: ${err.message}`);
+      } finally {
+        delBtn.disabled = false;
+      }
     });
 
     controls.append(statusSelect, editBtn, delBtn);

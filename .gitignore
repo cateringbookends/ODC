@@ -10,6 +10,22 @@ node_modules/
 # Playwright CLI session logs / artifacts
 .playwright-cli/
 
+# PII / HR data files — never commit
+*.xlsx
+*.xls
+*.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Output artifacts
+output/
+
+# Google Sheets sync credentials (contains secret API key)
+google-sync-config.json
+
 # OS / editor cruft
 Thumbs.db
 .DS_Store

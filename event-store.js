@@ -5,6 +5,7 @@
  * mirror immediately and persist to the server in the background.
  */
 const ODC_EVENTS_KEY = "odcSavedEvents";
+const ODC_EVENTS_SEEDED_KEY = "odcSavedEventsSeeded";
 
 let _events = ODC.lsGet(ODC_EVENTS_KEY, []);
 
@@ -13,13 +14,15 @@ function normalizeEvent(event) {
   const rawDays = Number(event.days);
   const days = Number.isFinite(rawDays) && rawDays > 0 ? Math.floor(rawDays) : 1; // 0/blank/NaN -> 1 (an event spans >= 1 day)
   const costPerPax = Number(event.costPerPax) || 0;
+  const baseBilling = pax * days * costPerPax;
+  const gstRate = window.ODC_DATA?.defaults?.gstRate ?? 0.05;
 
   return {
     ...event,
     pax,
     days,
     costPerPax,
-    totalBilling: pax * days * costPerPax
+    totalBilling: baseBilling + (baseBilling * gstRate)
   };
 }
 
@@ -34,6 +37,7 @@ function getSavedEvents() {
 function getAllEvents() {
   const saved = getSavedEvents();
   if (saved.length) return saved.sort(byDate);
+  if (ODC.lsGet(ODC_EVENTS_SEEDED_KEY, false)) return [];
   // Offline first-run fallback: seed data shipped in data.js.
   const seeds = (window.ODC_DATA?.events || []).map(normalizeEvent);
   return seeds.sort(byDate);
@@ -62,10 +66,12 @@ function _cacheUpsert(normalized) {
   if (i >= 0) _events[i] = normalized;
   else _events.unshift(normalized);
   ODC.lsSet(ODC_EVENTS_KEY, _events);
+  ODC.lsSet(ODC_EVENTS_SEEDED_KEY, true);
 }
 
 function upsertEvent(event) {
   const normalized = normalizeEvent(event);
+  ODC.lsSet(ODC_EVENTS_SEEDED_KEY, true);
   _cacheUpsert(normalized);
 
   ODC.api("POST", "/api/events", normalized)
@@ -78,9 +84,10 @@ function upsertEvent(event) {
 }
 
 function deleteEvent(id) {
+  ODC.lsSet(ODC_EVENTS_SEEDED_KEY, true);
   _events = _events.filter((e) => String(e.id) !== String(id));
   ODC.lsSet(ODC_EVENTS_KEY, _events);
-  ODC.api("DELETE", `/api/events/${encodeURIComponent(id)}`)
+  return ODC.api("DELETE", `/api/events/${encodeURIComponent(id)}`)
     .then(() => ODC.notifySync())
     .catch((e) => console.warn("Deleted locally; server sync failed:", e.message));
 }
@@ -97,8 +104,14 @@ function savePettyCash(eventId, data) {
 }
 
 async function getPreCost(eventId) {
-  try { return await ODC.api("GET", `/api/events/${encodeURIComponent(eventId)}/pre-cost`); }
-  catch { return ODC.lsGet(`odcPreCost:${eventId}`, null); }
+  const cached = ODC.lsGet(`odcPreCost:${eventId}`, null);
+  try {
+    const remote = await ODC.api("GET", `/api/events/${encodeURIComponent(eventId)}/pre-cost`);
+    if (remote && cached && typeof remote === "object" && typeof cached === "object") return { ...cached, ...remote };
+    return remote;
+  } catch {
+    return cached;
+  }
 }
 function savePreCost(eventId, data) {
   ODC.lsSet(`odcPreCost:${eventId}`, data);
@@ -111,5 +124,6 @@ ODC.addBoot(async () => {
   if (Array.isArray(data)) {
     _events = data;
     ODC.lsSet(ODC_EVENTS_KEY, _events);
+    ODC.lsSet(ODC_EVENTS_SEEDED_KEY, true);
   }
 });

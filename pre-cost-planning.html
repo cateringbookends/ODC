@@ -3,19 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
   <title>Pre Cost Planning - Event Dashboard</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="auth-check.js?v=4"></script>
 </head>
 <body>
   <header class="top-nav">
-    <a class="brand" href="index.html">Event Dashboard</a>
-    <nav aria-label="Primary navigation">
+    <div class="top-nav-bar">
+      <a class="brand" href="index.html">Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
+    </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
       <a href="index.html">Sales Intake</a>
       <a href="saved-events.html">Saved Events</a>
       <a class="active" href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
       <a href="master-persons.html">Master Persons</a>
+      <a href="bill-submission.html">Bill Submission</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>
@@ -30,7 +35,7 @@
       <form class="intake-form" id="planningForm">
         <section class="event-picker field">
           <span>Select Open Event</span>
-          <button type="button" class="event-picker-trigger" id="eventPickerTrigger" aria-expanded="false" aria-controls="eventPickerList">
+          <button type="button" class="event-picker-trigger" id="eventPickerTrigger" aria-label="Choose event" aria-expanded="false" aria-controls="eventPickerList">
             Choose event
           </button>
           <div class="event-picker-menu" id="eventPickerMenu" hidden>
@@ -44,6 +49,50 @@
           <span>Planning Date</span>
           <input type="text" class="date-dmy" placeholder="DD-MM-YYYY" autocomplete="off">
         </label>
+
+        <label class="field planning-zone-field">
+          <span>Zone</span>
+          <input type="text" id="planningZone" readonly placeholder="Select event first">
+        </label>
+
+        <label class="field planning-zone-extra" id="planningZoneExtraField" hidden>
+          <span>City</span>
+          <input type="text" id="planningZoneCity" readonly placeholder="Outstation city">
+        </label>
+
+        <section class="outstation-costs" id="outstationCostsSection" hidden aria-labelledby="outstationCostsTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Outstation Costs</p>
+            <h2 id="outstationCostsTitle">Additional Charges</h2>
+          </div>
+
+          <div class="cost-grid outstation-grid">
+            <label class="field">
+              <span>Staff Transportation Charge</span>
+              <input type="number" id="staffTransportationCharge" min="0" step="0.01" placeholder="0.00">
+            </label>
+
+            <label class="field">
+              <span>Staff Accommodation Charge</span>
+              <input type="number" id="staffAccommodationCharge" min="0" step="0.01" placeholder="0.00">
+            </label>
+
+            <label class="field">
+              <span>Staff Food Cost <small>1000 * Staff No.</small></span>
+              <input type="number" id="staffFoodCost" min="0" step="0.01" placeholder="0.00">
+            </label>
+
+            <label class="field">
+              <span>Refeervan</span>
+              <input type="number" id="refervanCharge" min="0" step="0.01" placeholder="0.00">
+            </label>
+
+            <label class="field">
+              <span>Equipment Transportation</span>
+              <input type="number" id="equipmentTransportationCharge" min="0" step="0.01" placeholder="0.00">
+            </label>
+          </div>
+        </section>
 
         <section class="payment-schedule">
           <div class="schedule-header">

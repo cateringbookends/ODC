@@ -44,7 +44,7 @@ const ODC_DATA = {
 
 ODC_DATA.events = ODC_DATA.events.map((event) => ({
   ...event,
-  totalBilling: event.pax * event.days * event.costPerPax
+  totalBilling: event.pax * event.days * event.costPerPax * (1 + ODC_DATA.defaults.gstRate)
 }));
 
 window.ODC_DATA = ODC_DATA;

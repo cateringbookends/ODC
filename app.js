@@ -2,13 +2,23 @@ const entryDateInput = document.querySelector("#entryDate");
 const eventDateInput = document.querySelector("#eventDate");
 const eventNameInput = document.querySelector("#eventName");
 const locationInput = document.querySelector("#location");
+const eventTimeWrap = document.querySelector("#eventTime");
+const eventTimeTrigger = document.querySelector("#eventTimeTrigger");
+const eventTimeDisplay = document.querySelector("#eventTimeDisplay");
+const eventTimePopover = document.querySelector("#eventTimePopover");
+const eventTimeHourList = document.querySelector("#eventTimeHourList");
+const eventTimeMinuteList = document.querySelector("#eventTimeMinuteList");
+const eventTimeAmPmList = document.querySelector("#eventTimeAmPmList");
 const locationZoneInput = document.querySelector("#locationZone");
+const locationZoneCustomField = document.querySelector("#locationZoneCustomField");
+const locationZoneCustomInput = document.querySelector("#locationZoneCustom");
 const paxInput = document.querySelector("#pax");
 const costInput = document.querySelector("#costPerPax");
 const eventDaysInput = document.querySelector("#eventDays");
 const totalBilling = document.querySelector("#totalBilling");
 const summaryPax = document.querySelector("#summaryPax");
 const summaryCost = document.querySelector("#summaryCost");
+const baseBilling = document.querySelector("#baseBilling");
 const minimumAdvance = document.querySelector("#minimumAdvance");
 const advanceDueDate = document.querySelector("#advanceDueDate");
 const paymentRows = document.querySelector("#paymentRows");
@@ -29,14 +39,7 @@ const saveEventButton = document.querySelector("#saveEvent");
 const newEventButton = document.querySelector("#newEvent");
 const saveStatus = document.querySelector("#saveStatus");
 
-// 12-hour time control (custom; native <input type=time> shows 24h/locale per browser)
-const timeEl = document.querySelector("#eventTime");
-const hourSel = timeEl.querySelector(".t-hour");
-const minSel = timeEl.querySelector(".t-min");
-const ampmSel = timeEl.querySelector(".t-ampm");
-
 // Catering precaution fields
-const eventTimeHidden = null; // (time is read from the selects)
 const foodTypeInput = document.querySelector("#foodType");
 const allergicCountInput = document.querySelector("#allergicCount");
 const allergicNotesInput = document.querySelector("#allergicNotes");
@@ -81,20 +84,37 @@ function formatDate(date) {
 // --- Dates: form fields hold DD-MM-YYYY; everything internal uses ISO yyyy-mm-dd ---
 function eventIso() { return ODC.dmyToIso(eventDateInput.value); }
 function entryIso() { return ODC.dmyToIso(entryDateInput.value); }
+function setDmyDate(input, dmy) {
+  input.value = dmy || "";
+  ODC.syncDmyDatePicker(input);
+}
+
+function getCityValue() {
+  const preset = locationZoneInput.value;
+  if (preset === "other") return locationZoneCustomInput.value.trim();
+  if (preset === "surat") return "Surat";
+  if (preset === "ahmedabad") return "Ahmedabad";
+  return "";
+}
+
+function syncCityField() {
+  locationZoneCustomField.hidden = locationZoneInput.value !== "other";
+  if (locationZoneInput.value !== "other") locationZoneCustomInput.value = "";
+}
 
 function getAdvanceDueDate() {
-  const iso = eventIso();
-  if (!iso) return "Select event date";
+  const iso = entryIso();
+  if (!iso) return "Select entry date";
   const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() - 3);
+  d.setDate(d.getDate() + 7);
   return formatDate(d);
 }
 
 function getAdvanceDueInputValue() {
-  const iso = eventIso();
+  const iso = entryIso();
   if (!iso) return "";
   const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() - 3);
+  d.setDate(d.getDate() + 7);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -102,27 +122,109 @@ function getAdvanceDueInputValue() {
 }
 
 // --- 12-hour time control ---
-function populateTimeOptions() {
-  let html = `<option value="">--</option>`;
-  for (let h = 1; h <= 12; h++) html += `<option value="${h}">${h}</option>`;
-  hourSel.innerHTML = html;
-  let mins = "";
-  for (let m = 0; m < 60; m++) { const mm = String(m).padStart(2, "0"); mins += `<option value="${mm}">${mm}</option>`; }
-  minSel.innerHTML = mins;
-  ampmSel.value = "AM";
-}
-
 function getTime12() {
-  if (!hourSel.value) return "";
-  return `${hourSel.value}:${minSel.value || "00"} ${ampmSel.value}`;
+  const hour = eventTimeWrap.dataset.hour || "";
+  const minute = eventTimeWrap.dataset.minute || "";
+  const ampm = eventTimeWrap.dataset.ampm || "";
+  if (!hour || !minute || !ampm) return "";
+  return `${hour}:${minute} ${ampm}`;
 }
 
 function setTime12(str) {
-  const m = String(str || "").trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!m) { hourSel.value = ""; minSel.value = "00"; ampmSel.value = "AM"; return; }
-  hourSel.value = String(Number(m[1]));
-  minSel.value = m[2];
-  ampmSel.value = m[3].toUpperCase();
+  const parsed = parseEventTime(str);
+  eventTimeWrap.dataset.hour = parsed.hour;
+  eventTimeWrap.dataset.minute = parsed.minute;
+  eventTimeWrap.dataset.ampm = parsed.ampm;
+  updateTimeSelection();
+  syncEventTime();
+}
+
+function parseEventTime(value) {
+  const raw = String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+  if (!raw) return { hour: "", minute: "", ampm: "" };
+
+  const twelveHour = raw.match(/^(\d{1,2})(?::(\d{2}))?\s*([AP]M)$/);
+  if (twelveHour) {
+    const hour = Number(twelveHour[1]);
+    const minute = Number(twelveHour[2] || "0");
+    const suffix = twelveHour[3];
+    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return { hour: "", minute: "", ampm: "" };
+    return {
+      hour: String(hour).padStart(2, "0"),
+      minute: String(minute).padStart(2, "0"),
+      ampm: suffix,
+    };
+  }
+
+  const twentyFourHour = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (twentyFourHour) {
+    let hour = Number(twentyFourHour[1]);
+    const minute = Number(twentyFourHour[2]);
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return { hour: "", minute: "", ampm: "" };
+    const suffix = hour >= 12 ? "PM" : "AM";
+    hour = hour % 12;
+    if (hour === 0) hour = 12;
+    return {
+      hour: String(hour).padStart(2, "0"),
+      minute: String(minute).padStart(2, "0"),
+      ampm: suffix,
+    };
+  }
+
+  return { hour: "", minute: "", ampm: "" };
+}
+
+function syncEventTime() {
+  const value = getTime12();
+  eventTimeDisplay.textContent = value || "--:-- --";
+  eventTimeTrigger.classList.toggle("is-empty", !value);
+  eventTimeWrap.dataset.hasValue = value ? "true" : "false";
+  updateBilling();
+}
+
+function setTimePopover(open) {
+  eventTimePopover.hidden = !open;
+  eventTimeTrigger.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function buildTimeColumn(container, values, selectedValue) {
+  container.innerHTML = "";
+  values.forEach((value) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "time-option";
+    button.textContent = value;
+    button.dataset.value = value;
+    button.setAttribute("aria-pressed", String(value === selectedValue));
+    if (value === selectedValue) button.classList.add("is-selected");
+    container.appendChild(button);
+  });
+}
+
+function buildTimePicker() {
+  buildTimeColumn(eventTimeHourList, ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"], eventTimeWrap.dataset.hour || "");
+  buildTimeColumn(eventTimeMinuteList, Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")), eventTimeWrap.dataset.minute || "");
+  buildTimeColumn(eventTimeAmPmList, ["AM", "PM"], eventTimeWrap.dataset.ampm || "");
+}
+
+function updateTimeSelection() {
+  const selected = {
+    hour: eventTimeWrap.dataset.hour || "",
+    minute: eventTimeWrap.dataset.minute || "",
+    ampm: eventTimeWrap.dataset.ampm || "",
+  };
+  [
+    [eventTimeHourList, selected.hour],
+    [eventTimeMinuteList, selected.minute],
+    [eventTimeAmPmList, selected.ampm],
+  ].forEach(([container, current]) => {
+    container.querySelectorAll(".time-option").forEach((button) => {
+      const isSelected = button.dataset.value === current;
+      button.classList.toggle("is-selected", isSelected);
+      button.setAttribute("aria-pressed", String(isSelected));
+    });
+  });
+  syncEventTime();
 }
 
 function getPaymentRows() {
@@ -134,12 +236,13 @@ function createPaymentRow({ label, amount, dueDate, isAdvance = false, billing =
   row.className = "payment-row";
   row.dataset.advance = String(isAdvance);
   row.dataset.touched = String(touched);
+  row.dataset.dateTouched = "false";
 
   row.innerHTML = `
-    <label><span>Cycle Name</span><input type="text" class="cycle-name"></label>
-    <label><span>Due Date</span><input type="date" class="cycle-date"></label>
-    <label><span>Amount</span><input type="number" class="cycle-amount" min="0" step="0.01"></label>
-    <label><span>Billing</span>
+    <label class="cycle-name-field"><span>Cycle Name</span><input type="text" class="cycle-name"></label>
+    <label class="cycle-date-field"><span>Due Date</span><input type="text" class="cycle-date date-dmy" placeholder="DD-MM-YYYY" autocomplete="off"></label>
+    <label class="cycle-amount-field"><span>Amount</span><input type="number" class="cycle-amount" min="0" step="0.01"></label>
+    <label class="cycle-billing-field"><span>Billing</span>
       <select class="cycle-billing"><option value="cash">Cash</option><option value="online">Online</option></select>
     </label>
     <label class="online-method-field" hidden><span>Online Method</span>
@@ -149,20 +252,27 @@ function createPaymentRow({ label, amount, dueDate, isAdvance = false, billing =
   `;
 
   row.querySelector(".cycle-name").value = label;
-  row.querySelector(".cycle-date").value = dueDate || "";
+  row.querySelector(".cycle-date").value = ODC.isoToDmy(dueDate);
   row.querySelector(".cycle-amount").value = Number(amount || 0).toFixed(2);
   row.querySelector(".cycle-billing").value = billing;
   row.querySelector(".online-method").value = method;
+  ODC.attachDateMask(row.querySelector(".cycle-date"));
+  ODC.syncDmyDatePicker(row.querySelector(".cycle-date"));
 
   row.querySelectorAll("input, select").forEach((input) => {
     input.addEventListener("input", updateBilling);
     input.addEventListener("change", updateBilling);
   });
   row.querySelector(".cycle-amount").addEventListener("input", () => { row.dataset.touched = "true"; });
+  row.querySelector(".cycle-date").addEventListener("input", () => { row.dataset.dateTouched = "true"; }, { capture: true });
+  row.querySelector(".cycle-date").addEventListener("change", () => { row.dataset.dateTouched = "true"; }, { capture: true });
   row.querySelector(".remove-payment").addEventListener("click", () => { row.remove(); updateBilling(); });
-  if (isAdvance) row.querySelector(".remove-payment").style.visibility = "hidden";
+  if (isAdvance) row.querySelector(".remove-payment").hidden = true;
+  row.classList.toggle("has-remove", !isAdvance);
+  row.classList.toggle("is-online", row.querySelector(".cycle-billing").value === "online");
   row.querySelector(".cycle-billing").addEventListener("change", (e) => {
     row.querySelector(".online-method-field").hidden = e.target.value !== "online";
+    row.classList.toggle("is-online", e.target.value === "online");
     updateBilling();
   });
 
@@ -179,7 +289,10 @@ function syncAdvanceRow(advance, dueDate) {
   if (advanceRow.dataset.touched !== "true" && document.activeElement !== advanceAmountInput) {
     advanceAmountInput.value = advance.toFixed(2);
   }
-  advanceRow.querySelector(".cycle-date").value = dueDate;
+  const advanceDateInput = advanceRow.querySelector(".cycle-date");
+  if (advanceRow.dataset.dateTouched !== "true" && document.activeElement !== advanceDateInput) {
+    setDmyDate(advanceDateInput, ODC.isoToDmy(dueDate));
+  }
 }
 
 function resetAdvanceAuto() {
@@ -210,8 +323,9 @@ function syncOnlineMethodFields() {
 
 function renderInvoice() {
   const onlineRows = getPaymentRows().filter((row) => row.querySelector(".cycle-billing").value === "online");
-  const subtotal = onlineRows.reduce((sum, row) => sum + readNumber(row.querySelector(".cycle-amount")), 0);
-  const gst = subtotal * billingDefaults.gstRate;
+  const invoiceTotalAmount = onlineRows.reduce((sum, row) => sum + readNumber(row.querySelector(".cycle-amount")), 0);
+  const taxableSubtotal = invoiceTotalAmount / (1 + billingDefaults.gstRate);
+  const gst = invoiceTotalAmount - taxableSubtotal;
 
   invoicePanel.hidden = onlineRows.length === 0;
   salesShell.classList.toggle("has-online", onlineRows.length > 0);
@@ -220,7 +334,7 @@ function renderInvoice() {
   onlineRows.forEach((row) => {
     const name = row.querySelector(".cycle-name").value || "Online Payment";
     const method = row.querySelector(".online-method").value;
-    const dateValue = row.querySelector(".cycle-date").value;
+    const dateValue = ODC.dmyToIso(row.querySelector(".cycle-date").value);
     const dueDate = dateValue ? formatDate(new Date(`${dateValue}T00:00:00`)) : "No due date";
     const amount = readNumber(row.querySelector(".cycle-amount"));
 
@@ -237,13 +351,14 @@ function renderInvoice() {
     invoiceLines.append(line);
   });
 
-  invoiceSubtotal.textContent = moneyFormatter.format(subtotal);
+  invoiceSubtotal.textContent = moneyFormatter.format(taxableSubtotal);
   invoiceGstAmount.textContent = moneyFormatter.format(gst);
-  invoiceTotal.textContent = moneyFormatter.format(subtotal + gst);
+  invoiceTotal.textContent = moneyFormatter.format(invoiceTotalAmount);
 }
 
 function addCustomPaymentCycle() {
-  const balance = Math.max(getCurrentTotal() - getScheduledTotal(), 0);
+  const total = getCurrentTotal();
+  const balance = Math.max(total + (total * billingDefaults.gstRate) - getScheduledTotal(), 0);
   createPaymentRow({ label: "Balance Payment", amount: balance, dueDate: eventIso(), isAdvance: false });
   updateBilling();
 }
@@ -257,7 +372,7 @@ function getCurrentTotal() {
 function getPaymentSchedulePayload() {
   return getPaymentRows().map((row) => ({
     label: row.querySelector(".cycle-name").value.trim(),
-    dueDate: row.querySelector(".cycle-date").value,
+    dueDate: ODC.dmyToIso(row.querySelector(".cycle-date").value),
     amount: readNumber(row.querySelector(".cycle-amount")),
     billing: row.querySelector(".cycle-billing").value,
     method: row.querySelector(".online-method").value,
@@ -299,12 +414,27 @@ function loadEventIntoForm(id) {
   if (!event) return;
   editing = event;
 
-  entryDateInput.value = ODC.isoToDmy(event.entryDate);
-  eventDateInput.value = ODC.isoToDmy(event.date);
+  setDmyDate(entryDateInput, ODC.isoToDmy(event.entryDate));
+  setDmyDate(eventDateInput, ODC.isoToDmy(event.date));
   setTime12(event.time);
+  setTimePopover(false);
   eventNameInput.value = event.name || "";
   locationInput.value = event.location || "";
-  locationZoneInput.value = ["surat", "ahmedabad", "other"].includes(event.locationZone) ? event.locationZone : "other";
+  const zone = String(event.locationZone || "").trim();
+  if (zone.toLowerCase() === "surat") {
+    locationZoneInput.value = "surat";
+    locationZoneCustomInput.value = "";
+  } else if (zone.toLowerCase() === "ahmedabad") {
+    locationZoneInput.value = "ahmedabad";
+    locationZoneCustomInput.value = "";
+  } else if (zone) {
+    locationZoneInput.value = "other";
+    locationZoneCustomInput.value = zone;
+  } else {
+    locationZoneInput.value = "";
+    locationZoneCustomInput.value = "";
+  }
+  syncCityField();
   paxInput.value = event.pax || "";
   eventDaysInput.value = event.days || 1;
   costInput.value = event.costPerPax || "";
@@ -337,9 +467,12 @@ function clearForm() {
   salesForm.reset();
   eventDaysInput.value = 1;
   setTime12("");
-  locationZoneInput.value = "other";
-  entryDateInput.value = "";
-  eventDateInput.value = "";
+  setTimePopover(false);
+  locationZoneInput.value = "";
+  locationZoneCustomInput.value = "";
+  syncCityField();
+  setDmyDate(entryDateInput, "");
+  setDmyDate(eventDateInput, "");
   Object.values(invoiceKycInputs).forEach((input) => { input.value = ""; });
   paymentRows.innerHTML = "";
   saveEventButton.textContent = "Save Event";
@@ -372,7 +505,7 @@ function saveCurrentEvent() {
     date: dateIso,
     time: getTime12(),
     location,
-    locationZone: locationZoneInput.value || "other",
+    locationZone: getCityValue(),
     pax,
     days,
     costPerPax,
@@ -392,7 +525,9 @@ function saveCurrentEvent() {
 
 function updateBilling() {
   const pax = Math.floor(readNumber(paxInput));
-  const total = getCurrentTotal();
+  const baseTotal = getCurrentTotal();
+  const gstAmount = baseTotal * billingDefaults.gstRate;
+  const total = baseTotal + gstAmount;
   const advance = total * billingDefaults.advanceRate;
 
   syncAdvanceRow(advance, getAdvanceDueInputValue());
@@ -406,24 +541,61 @@ function updateBilling() {
   totalBilling.value = moneyFormatter.format(total);
   summaryPax.textContent = pax.toLocaleString("en-IN");
   summaryCost.textContent = moneyFormatter.format(readNumber(costInput));
+  baseBilling.textContent = moneyFormatter.format(baseTotal);
   minimumAdvance.textContent = moneyFormatter.format(advance);
   advanceDueDate.textContent = getAdvanceDueDate();
   scheduledTotal.textContent = moneyFormatter.format(scheduled);
   cashScheduled.textContent = moneyFormatter.format(billingTotals.cash);
   onlineScheduled.textContent = moneyFormatter.format(billingTotals.online);
-  onlineGst.textContent = moneyFormatter.format(billingTotals.online * billingDefaults.gstRate);
+  onlineGst.textContent = moneyFormatter.format(gstAmount);
   balancePending.textContent = moneyFormatter.format(total - scheduled);
   balancePending.classList.toggle("overpaid", total - scheduled < 0);
 
   renderPrecautions();
 }
 
-[eventDateInput, paxInput, costInput, eventDaysInput].forEach((input) => {
+[entryDateInput, eventDateInput, paxInput, costInput, eventDaysInput].forEach((input) => {
   input.addEventListener("input", () => { resetAdvanceAuto(); updateBilling(); });
 });
-[hourSel, minSel, ampmSel, foodTypeInput, allergicCountInput, allergicNotesInput, locationZoneInput].forEach((el) => {
+[
+  eventTimeHourList,
+  eventTimeMinuteList,
+  eventTimeAmPmList,
+].forEach((container) => {
+  container.addEventListener("click", (e) => {
+    const button = e.target.closest(".time-option");
+    if (!button) return;
+    const value = button.dataset.value;
+    if (container === eventTimeHourList) eventTimeWrap.dataset.hour = value;
+    if (container === eventTimeMinuteList) eventTimeWrap.dataset.minute = value;
+    if (container === eventTimeAmPmList) eventTimeWrap.dataset.ampm = value;
+    updateTimeSelection();
+  });
+});
+
+eventTimeTrigger.addEventListener("click", () => {
+  setTimePopover(eventTimePopover.hidden);
+});
+
+document.addEventListener("click", (e) => {
+  if (!eventTimeWrap.contains(e.target)) setTimePopover(false);
+});
+
+eventTimePopover.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    setTimePopover(false);
+    eventTimeTrigger.focus();
+  }
+});
+
+[foodTypeInput, allergicCountInput, allergicNotesInput, locationZoneCustomInput].forEach((el) => {
   el.addEventListener("input", updateBilling);
   el.addEventListener("change", updateBilling);
+});
+
+locationZoneInput.addEventListener("change", () => {
+  syncCityField();
+  updateBilling();
 });
 addPaymentButton.addEventListener("click", addCustomPaymentCycle);
 saveEventButton.addEventListener("click", saveCurrentEvent);
@@ -434,7 +606,8 @@ Object.values(invoiceKycInputs).forEach((input) => input.addEventListener("input
 function init() {
   ODC.attachDateMask(entryDateInput);
   ODC.attachDateMask(eventDateInput);
-  populateTimeOptions();
+  buildTimePicker();
+  syncCityField();
   updateBilling();
   const editId = new URLSearchParams(location.search).get("edit");
   if (editId) loadEventIntoForm(editId);

@@ -82,7 +82,9 @@ function renderEvents(query = "") {
       selectedEvent = event;
       selectedEventId.value = event.id;
       trigger.textContent = event.name;
+      trigger.setAttribute("aria-label", event.name);
       prepDate.value = ODC.isoToDmy(getOneDayBefore(event.date));
+      ODC.syncDmyDatePicker(prepDate);
       updateEventContext();
       loadPettyCash(event.id);
       closeMenu();
@@ -99,8 +101,8 @@ function createCashRow(container, type, values = {}) {
   if (type === "payout") {
     row.classList.add("payout-row");
     row.innerHTML = `
-      <label><span>Head</span><select class="cash-head"></select></label>
-      <label><span>Person</span><select class="cash-name"></select></label>
+      <label class="cash-picker-field"><span>Head</span><select class="cash-head native-picker"></select><div class="smart-select" data-picker="head"></div></label>
+      <label class="cash-picker-field"><span>Person</span><select class="cash-name native-picker"></select><div class="smart-select" data-picker="person"></div></label>
       <label><span>Purpose</span><input type="text" class="cash-purpose" placeholder="Vendor balance, staff advance"></label>
       <label><span>Amount</span><input type="number" class="cash-amount" min="0" step="0.01" placeholder="0.00"></label>
       <button type="button" class="remove-payment" aria-label="Remove row">Remove</button>
@@ -136,31 +138,198 @@ function createCashRow(container, type, values = {}) {
 function populatePayoutSelectors(row, values = {}) {
   const headSelect = row.querySelector(".cash-head");
   const personSelect = row.querySelector(".cash-name");
+  const headPicker = row.querySelector('[data-picker="head"]');
+  const personPicker = row.querySelector('[data-picker="person"]');
 
-  headSelect.innerHTML = "";
-  masterHeads.forEach((head) => {
-    const opt = document.createElement("option");
-    opt.value = head.id;
-    opt.textContent = head.name; // textContent => safe against HTML injection
-    headSelect.append(opt);
-  });
+  function normalizeText(value) {
+    return String(value || "").trim().toLowerCase();
+  }
 
-  function syncPersons(preferredPerson) {
-    const head = masterHeads.find((item) => item.id === headSelect.value) || masterHeads[0];
+  function personName(person) {
+    return typeof person === "string" ? person : String(person?.name || "");
+  }
+
+  function personLabel(person) {
+    if (typeof person === "string") return person;
+    const name = String(person?.name || "");
+    const code = String(person?.code || "");
+    return code ? `${name} (${code})` : name;
+  }
+
+  function personSearchText(person) {
+    if (typeof person === "string") return person;
+    return [
+      person.name,
+      person.code,
+      person.designation,
+      person.department,
+      person.location
+    ].filter(Boolean).join(" ");
+  }
+
+  function optionMatches(text, query) {
+    return normalizeText(text).includes(normalizeText(query));
+  }
+
+  function selectedHead() {
+    return masterHeads.find((item) => item.id === headSelect.value) || masterHeads[0];
+  }
+
+  function buildHiddenHeadOptions(preferredHeadId = headSelect.value) {
+    headSelect.innerHTML = "";
+    masterHeads.forEach((head) => {
+      const opt = document.createElement("option");
+      opt.value = head.id;
+      opt.textContent = head.name;
+      headSelect.append(opt);
+    });
+    if (preferredHeadId && masterHeads.some((head) => head.id === preferredHeadId)) headSelect.value = preferredHeadId;
+  }
+
+  function buildHiddenPersonOptions(preferredPerson = personSelect.value) {
+    const head = selectedHead();
     const persons = head?.persons || [];
     personSelect.innerHTML = "";
     persons.forEach((person) => {
+      const name = personName(person);
+      if (!name) return;
       const opt = document.createElement("option");
-      opt.value = person;
-      opt.textContent = person;
+      opt.value = name;
+      opt.textContent = personLabel(person);
       personSelect.append(opt);
     });
-    if (preferredPerson) personSelect.value = preferredPerson;
+    if (preferredPerson && persons.some((person) => personName(person) === preferredPerson)) {
+      personSelect.value = preferredPerson;
+    }
   }
 
-  headSelect.addEventListener("change", () => syncPersons());
-  if (values.headId) headSelect.value = values.headId;
-  syncPersons(values.person);
+  function initSmartSelect(root, config) {
+    root.innerHTML = `
+      <button type="button" class="smart-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+        <span></span>
+      </button>
+      <div class="smart-select-menu" hidden>
+        <input type="search" class="smart-select-search" placeholder="${config.placeholder}">
+        <div class="smart-select-list" role="listbox"></div>
+      </div>
+    `;
+
+    const trigger = root.querySelector(".smart-select-trigger");
+    const triggerText = trigger.querySelector("span");
+    const menuEl = root.querySelector(".smart-select-menu");
+    const searchEl = root.querySelector(".smart-select-search");
+    const listEl = root.querySelector(".smart-select-list");
+
+    function close() {
+      menuEl.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+    }
+
+    function open() {
+      document.querySelectorAll(".smart-select-menu:not([hidden])").forEach((openMenu) => {
+        if (openMenu !== menuEl) {
+          openMenu.hidden = true;
+          openMenu.previousElementSibling?.setAttribute("aria-expanded", "false");
+        }
+      });
+      menuEl.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      searchEl.value = "";
+      renderOptions();
+      searchEl.focus();
+    }
+
+    function selectItem(item) {
+      config.onSelect(item);
+      close();
+      renderLabel();
+      config.afterSelect?.();
+    }
+
+    function renderLabel() {
+      triggerText.textContent = config.label() || config.emptyLabel;
+    }
+
+    function renderOptions() {
+      const query = searchEl.value;
+      const items = config.items().filter((item) => optionMatches(config.searchText(item), query));
+      listEl.innerHTML = "";
+
+      if (!items.length) {
+        const empty = document.createElement("p");
+        empty.className = "smart-select-empty";
+        empty.textContent = "No match found";
+        listEl.append(empty);
+        return;
+      }
+
+      items.forEach((item) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "smart-select-option";
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", config.isSelected(item) ? "true" : "false");
+        option.innerHTML = config.optionHtml(item);
+        option.addEventListener("click", () => selectItem(item));
+        listEl.append(option);
+      });
+    }
+
+    trigger.addEventListener("click", () => {
+      if (menuEl.hidden) open();
+      else close();
+    });
+    searchEl.addEventListener("input", renderOptions);
+    root.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        close();
+        trigger.focus();
+      }
+    });
+
+    return { renderLabel, renderOptions, close };
+  }
+
+  buildHiddenHeadOptions(values.headId);
+  buildHiddenPersonOptions(values.person);
+
+  let personSmartSelect;
+  const headSmartSelect = initSmartSelect(headPicker, {
+    placeholder: "Search head",
+    emptyLabel: "Select head",
+    items: () => masterHeads,
+    label: () => selectedHead()?.name || "",
+    searchText: (head) => head.name,
+    isSelected: (head) => head.id === headSelect.value,
+    optionHtml: (head) => `<strong>${head.name}</strong><small>${(head.persons || []).length} people</small>`,
+    onSelect: (head) => {
+      headSelect.value = head.id;
+      buildHiddenPersonOptions();
+    },
+    afterSelect: () => {
+      personSmartSelect.renderLabel();
+      personSmartSelect.renderOptions();
+    }
+  });
+
+  personSmartSelect = initSmartSelect(personPicker, {
+    placeholder: "Search name, code or role",
+    emptyLabel: "Select person",
+    items: () => selectedHead()?.persons || [],
+    label: () => personSelect.selectedOptions[0]?.textContent || "",
+    searchText: personSearchText,
+    isSelected: (person) => personName(person) === personSelect.value,
+    optionHtml: (person) => {
+      const name = personName(person);
+      const code = typeof person === "string" ? "" : String(person?.code || "");
+      const role = typeof person === "string" ? "" : String(person?.designation || "");
+      return `<strong>${code ? `${name} (${code})` : name}</strong>${role ? `<small>${role}</small>` : ""}`;
+    },
+    onSelect: (person) => { personSelect.value = personName(person); }
+  });
+
+  headSmartSelect.renderLabel();
+  personSmartSelect.renderLabel();
 }
 
 function getRowTotal(container) {
@@ -270,7 +439,15 @@ addPayoutButton.addEventListener("click", () => createCashRow(payoutRows, "payou
 addPettyCashButton.addEventListener("click", () => createCashRow(pettyCashRows, "petty"));
 if (pettyCashForm) pettyCashForm.addEventListener("submit", (e) => e.preventDefault());
 
-document.addEventListener("click", (event) => { if (!event.target.closest(".event-picker")) closeMenu(); });
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".event-picker")) closeMenu();
+  if (!event.target.closest(".smart-select")) {
+    document.querySelectorAll(".smart-select-menu:not([hidden])").forEach((openMenu) => {
+      openMenu.hidden = true;
+      openMenu.previousElementSibling?.setAttribute("aria-expanded", "false");
+    });
+  }
+});
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu({ restoreFocus: true }); });
 
 function init() {

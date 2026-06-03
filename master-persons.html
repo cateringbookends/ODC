@@ -3,19 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
   <title>Master Persons - Event Dashboard</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="auth-check.js?v=4"></script>
 </head>
 <body>
   <header class="top-nav">
-    <a class="brand" href="index.html">Event Dashboard</a>
-    <nav aria-label="Primary navigation">
+    <div class="top-nav-bar">
+      <a class="brand" href="index.html">Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
+    </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
       <a href="index.html">Sales Intake</a>
       <a href="saved-events.html">Saved Events</a>
       <a href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
       <a class="active" href="master-persons.html">Master Persons</a>
+      <a href="bill-submission.html">Bill Submission</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>
@@ -29,8 +34,8 @@
 
       <form class="intake-form" id="masterPersonsForm">
         <label class="field">
-          <span>Head Name</span>
-          <input type="text" id="headName" placeholder="Operations Head">
+          <span>Post / Designation</span>
+          <input type="text" id="headName" placeholder="Head Chef">
         </label>
 
         <label class="field">
@@ -38,13 +43,45 @@
           <input type="text" id="personName" placeholder="Assigned person">
         </label>
 
+        <label class="field">
+          <span>Employee Code</span>
+          <input type="text" id="personCode" placeholder="e.g. 18">
+        </label>
+
+        <label class="field">
+          <span>Department / Unit</span>
+          <input type="text" id="personDepartment" placeholder="DOME, ODC, CORP">
+        </label>
+
+        <label class="field">
+          <span>Location</span>
+          <input type="text" id="personLocation" placeholder="Surat, Ahmedabad">
+        </label>
+
         <section class="payment-schedule">
           <div class="schedule-header">
             <div>
               <p class="eyebrow">Directory</p>
-              <h2>Person Wise Master</h2>
+              <h2>Post Wise Master</h2>
             </div>
             <button type="button" class="secondary-button" id="addPerson">+ Add Person</button>
+          </div>
+
+          <label class="field master-search-field">
+            <span>Search</span>
+            <input type="search" id="masterSearch" placeholder="Search name, code, post, department, location">
+          </label>
+
+          <div class="master-filter-row">
+            <div class="field master-department-field">
+              <span>Department Filter</span>
+              <select id="masterDepartmentFilter" multiple hidden></select>
+              <div class="department-filter" id="departmentFilterControl"></div>
+            </div>
+            <div class="master-filter-actions">
+              <button type="button" class="secondary-button" id="selectAllDepartments">Select All</button>
+              <button type="button" class="secondary-button" id="clearDepartments">Deselect All</button>
+            </div>
           </div>
 
           <div class="master-list" id="masterList"></div>

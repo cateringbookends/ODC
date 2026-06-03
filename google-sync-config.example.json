@@ -1,0 +1,4 @@
+{
+  "scriptUrl": "https://script.google.com/macros/s/YOUR_SCRIPT_DEPLOYMENT_ID/exec",
+  "apiKey": "REPLACE_WITH_STRONG_RANDOM_KEY_MIN_32_CHARS"
+}

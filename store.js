@@ -52,6 +52,42 @@ window.ODC = (function () {
     const m = String(iso == null ? "" : iso).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
   }
+  function syncDatePicker(input, picker) {
+    const iso = dmyToIso(input.value);
+    picker.value = iso || "";
+  }
+  function syncDmyDatePicker(input) {
+    if (input?._dmyPicker) syncDatePicker(input, input._dmyPicker);
+  }
+  function attachDatePicker(input) {
+    if (!input || input.dataset.dmyPicker) return null;
+    input.dataset.dmyPicker = "1";
+
+    const wrap = document.createElement("div");
+    wrap.className = "dmy-date-control";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.append(input);
+
+    const picker = document.createElement("input");
+    picker.type = "date";
+    picker.className = "dmy-picker";
+    picker.value = "";
+    picker.tabIndex = -1;
+    picker.setAttribute("aria-label", `${input.closest("label")?.querySelector("span")?.textContent || "Date"} calendar`);
+    picker.addEventListener("change", () => {
+      input.value = isoToDmy(picker.value);
+      input.classList.remove("invalid-date");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      picker.blur();
+    });
+    picker.addEventListener("keyup", (event) => {
+      if (event.key === "Escape" || event.key === "Enter") picker.blur();
+    });
+    input._dmyPicker = picker;
+    wrap.append(picker);
+    return picker;
+  }
   // Turn a text input into an auto-formatting DD-MM-YYYY field (digits -> DD-MM-YYYY).
   function attachDateMask(input) {
     if (!input || input.dataset.dmyMask) return;
@@ -59,6 +95,7 @@ window.ODC = (function () {
     input.setAttribute("inputmode", "numeric");
     input.setAttribute("maxlength", "10");
     if (!input.placeholder) input.placeholder = "DD-MM-YYYY";
+    const picker = attachDatePicker(input);
     const reformat = () => {
       const digits = input.value.replace(/\D/g, "").slice(0, 8);
       let out = digits.slice(0, 2);
@@ -66,9 +103,15 @@ window.ODC = (function () {
       if (digits.length > 4) out += "-" + digits.slice(4, 8);
       input.value = out;
       input.classList.toggle("invalid-date", input.value.length === 10 && !dmyToIso(input.value));
+      if (picker) syncDatePicker(input, picker);
     };
     input.addEventListener("input", reformat);
-    input.addEventListener("blur", () => input.classList.toggle("invalid-date", !!input.value && !dmyToIso(input.value)));
+    input.addEventListener("change", () => { if (picker) syncDatePicker(input, picker); });
+    input.addEventListener("blur", () => {
+      input.classList.toggle("invalid-date", !!input.value && !dmyToIso(input.value));
+      if (picker) syncDatePicker(input, picker);
+    });
+    if (picker) syncDatePicker(input, picker);
   }
 
   function lsGet(key, fallback) {
@@ -90,20 +133,18 @@ window.ODC = (function () {
     syncFns.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
   }
 
-  async function boot() {
-    try {
-      await Promise.all(boots.map((b) => b()));
-      online = true;
-    } catch (e) {
-      online = false;
-      console.warn("ODC running offline (using local cache):", e && e.message);
-    } finally {
-      resolveReady();
-      notifySync();
-    }
+  function boot() {
+    resolveReady();
+    notifySync();
+    Promise.all(boots.map((b) => b()))
+      .then(() => { online = true; notifySync(); })
+      .catch((e) => {
+        online = false;
+        console.warn("ODC running offline (using local cache):", e && e.message);
+      });
   }
   // Boot after all in-body scripts (and their addBoot/registerSync calls) have run.
   window.addEventListener("DOMContentLoaded", boot);
 
-  return { ready, api, escapeHtml, dmyToIso, isoToDmy, attachDateMask, lsGet, lsSet, addBoot, registerSync, notifySync, isOnline: () => online };
+  return { ready, api, escapeHtml, dmyToIso, isoToDmy, attachDateMask, syncDmyDatePicker, lsGet, lsSet, addBoot, registerSync, notifySync, isOnline: () => online };
 })();

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Bill Submission - Event Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="auth-check.js?v=4"></script>
+</head>
+<body>
+  <header class="top-nav">
+    <div class="top-nav-bar">
+      <a class="brand" href="index.html">Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
+    </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="index.html">Sales Intake</a>
+      <a href="saved-events.html">Saved Events</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a class="active" href="bill-submission.html">Bill Submission</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell planning-shell">
+    <section class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Staff Portal</p>
+        <h1>Submit Bill / Expense</h1>
+      </div>
+
+      <div class="form-body">
+        <div class="field-group">
+          <label for="billEvent">Event <span style="color:#dc2626">*</span></label>
+          <select id="billEvent">
+            <option value="">— Select event —</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="billHead">Department Head <span style="color:#dc2626">*</span></label>
+          <select id="billHead">
+            <option value="">— Select head —</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="billPerson">Your Name <span style="color:#dc2626">*</span></label>
+          <input type="text" id="billPerson" placeholder="Enter your name">
+        </div>
+        <div class="cost-grid" style="grid-template-columns:1fr 1fr;gap:14px">
+          <div class="field-group">
+            <label for="billAmount">Amount (&#8377;) <span style="color:#dc2626">*</span></label>
+            <input type="number" id="billAmount" min="0.01" step="0.01" placeholder="0.00">
+          </div>
+          <div class="field-group">
+            <label for="billCategory">Category</label>
+            <select id="billCategory">
+              <option value="misc">Miscellaneous</option>
+              <option value="food">Food</option>
+              <option value="transport">Transport</option>
+              <option value="equipment">Equipment</option>
+              <option value="accommodation">Accommodation</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-group">
+          <label for="billDescription">Description / Notes</label>
+          <textarea id="billDescription" rows="3" placeholder="What is this expense for?"></textarea>
+        </div>
+        <p id="billError" class="bill-form-msg bill-form-error" hidden></p>
+        <p id="billSuccess" class="bill-form-msg bill-form-success" hidden></p>
+        <div class="form-actions" style="margin-top:1rem">
+          <button type="button" class="primary-button" id="billSubmitBtn">Submit Bill</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <p class="eyebrow" id="billsEyebrow">Your Submissions</p>
+        <h2 id="billsTitle">Submitted Bills</h2>
+      </div>
+      <div id="billsList"></div>
+    </section>
+
+    <section class="panel" id="adminUsersPanel" hidden>
+      <div class="panel-header">
+        <p class="eyebrow">Admin</p>
+        <h2>User Management</h2>
+      </div>
+      <div id="usersList" style="margin-bottom:1.5rem"></div>
+
+      <div class="panel-header" style="margin-top:0.5rem">
+        <h3 style="font-size:1rem;font-weight:600">Add User</h3>
+      </div>
+      <div class="form-body">
+        <div class="cost-grid" style="grid-template-columns:1fr 1fr;gap:14px">
+          <div class="field-group">
+            <label for="newUsername">Username</label>
+            <input type="text" id="newUsername" placeholder="e.g. john">
+          </div>
+          <div class="field-group">
+            <label for="newFullName">Full Name</label>
+            <input type="text" id="newFullName" placeholder="Display name">
+          </div>
+        </div>
+        <div class="cost-grid" style="grid-template-columns:1fr 1fr;gap:14px">
+          <div class="field-group">
+            <label for="newPassword">Password</label>
+            <input type="password" id="newPassword" placeholder="Min 4 characters">
+          </div>
+          <div class="field-group">
+            <label for="newRole">Role</label>
+            <select id="newRole">
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+        <p id="userError" class="bill-form-msg bill-form-error" hidden></p>
+        <p id="userSuccess" class="bill-form-msg bill-form-success" hidden></p>
+        <div class="form-actions" style="margin-top:1rem">
+          <button type="button" class="primary-button" id="addUserBtn">Add User</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="store.js?v=4"></script>
+  <script src="data.js?v=4"></script>
+  <script src="event-store.js?v=4"></script>
+  <script src="master-data.js?v=4"></script>
+  <script src="bill-submission.js?v=4"></script>
+</body>
+</html>

@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS events (
   food_type TEXT CHECK (food_type IS NULL OR food_type IN ('jain', 'non-jain')),
   allergic_count INTEGER NOT NULL DEFAULT 0,
   allergic_notes TEXT,
-  location_zone TEXT CHECK (location_zone IS NULL OR location_zone IN ('surat', 'ahmedabad', 'other')),
+  location_zone TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -103,6 +103,10 @@ CREATE TABLE IF NOT EXISTS master_persons (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   head_id TEXT NOT NULL,
   person_name TEXT NOT NULL,
+  person_code TEXT,
+  person_designation TEXT,
+  person_department TEXT,
+  person_location TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (head_id) REFERENCES master_heads(id) ON DELETE CASCADE
 );
@@ -130,6 +134,11 @@ CREATE TABLE IF NOT EXISTS pre_cost_inputs (
   third_party_vendor REAL NOT NULL DEFAULT 0,
   decor_charge REAL NOT NULL DEFAULT 0,
   miscellaneous_cost REAL NOT NULL DEFAULT 0,
+  staff_transportation_charge REAL NOT NULL DEFAULT 0,
+  staff_accommodation_charge REAL NOT NULL DEFAULT 0,
+  staff_food_cost REAL NOT NULL DEFAULT 0,
+  refervan_charge REAL NOT NULL DEFAULT 0,
+  equipment_transportation_charge REAL NOT NULL DEFAULT 0,
   total_cost REAL NOT NULL DEFAULT 0,
   profit_loss REAL NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -143,3 +152,50 @@ CREATE INDEX IF NOT EXISTS idx_payment_cycles_event_id ON payment_cycles(event_i
 CREATE INDEX IF NOT EXISTS idx_pre_cost_items_plan_id ON pre_cost_items(plan_id);
 CREATE INDEX IF NOT EXISTS idx_master_persons_head_id ON master_persons(head_id);
 CREATE INDEX IF NOT EXISTS idx_petty_cash_event_id ON petty_cash_rows(event_id);
+
+-- Authentication
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  full_name TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit log: every write with who/when/device
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  username TEXT NOT NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  detail TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Bill/expense submissions from staff
+CREATE TABLE IF NOT EXISTS bill_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  submitted_by_user_id INTEGER,
+  head_id TEXT NOT NULL,
+  person_name TEXT NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
+  description TEXT,
+  category TEXT NOT NULL DEFAULT 'misc' CHECK (category IN ('food', 'transport', 'equipment', 'accommodation', 'misc')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
+CREATE INDEX IF NOT EXISTS idx_bill_submissions_event ON bill_submissions(event_id);
+CREATE INDEX IF NOT EXISTS idx_bill_submissions_status ON bill_submissions(status);
+CREATE INDEX IF NOT EXISTS idx_bill_submissions_user ON bill_submissions(submitted_by_user_id);

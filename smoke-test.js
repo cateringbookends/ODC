@@ -22,11 +22,12 @@ async function api(method, path, body) {
 
 (async () => {
   console.log(`Smoke testing ${BASE}`);
+  const originalMasters = (await api("GET", "/api/master-persons")).json;
 
-  // 1. seed events present
+  // 1. events endpoint is reachable and can start empty after a full cleanup
   let r = await api("GET", "/api/events");
   check("GET /api/events returns array", Array.isArray(r.json), JSON.stringify(r.json));
-  check("seed events present (>=3)", r.json.length >= 3, `len=${r.json.length}`);
+  check("events endpoint is readable", typeof r.json.length === "number", `len=${r.json.length}`);
 
   // 2. create event with schedule + online + KYC
   const id = `EVT-TEST-${Date.now()}`;
@@ -45,7 +46,7 @@ async function api(method, path, body) {
     foodType: "jain",
     allergicCount: 7,
     allergicNotes: "5 no nuts, 2 no dairy",
-    locationZone: "surat",
+    locationZone: "Surat",
     paymentSchedule: [
       { label: "Advance", dueDate: "2026-08-12", amount: 50000, billing: "cash", method: "UPI", isAdvance: true },
       { label: "Balance", dueDate: "2026-08-15", amount: 50000, billing: "online", method: "Card", isAdvance: false }
@@ -54,17 +55,15 @@ async function api(method, path, body) {
   };
   r = await api("POST", "/api/events", payload);
   check("POST event -> 200", r.status === 200, JSON.stringify(r.json));
-  check("total_billing computed (100*2*500=100000)", r.json && r.json.totalBilling === 100000, r.json && String(r.json.totalBilling));
+  check("total_billing computed with GST (100*2*500*1.05=105000)", r.json && r.json.totalBilling === 105000, r.json && String(r.json.totalBilling));
   check("payment schedule round-trips with isAdvance", r.json && r.json.paymentSchedule.length === 2 && r.json.paymentSchedule[0].isAdvance === true);
   check("online method preserved", r.json && r.json.paymentSchedule[1].method === "Card");
   check("KYC mapped back (camelCase)", r.json && r.json.invoiceKyc.pan === "ABCDE1234F" && r.json.invoiceKyc.aadhar === "123456789012");
-  check("new fields round-trip (time/food/allergic/zone)", r.json && r.json.time === "6:30 PM" && r.json.foodType === "jain" && r.json.allergicCount === 7 && r.json.allergicNotes === "5 no nuts, 2 no dairy" && r.json.locationZone === "surat", JSON.stringify({ t: r.json && r.json.time, f: r.json && r.json.foodType, c: r.json && r.json.allergicCount, z: r.json && r.json.locationZone }));
+  check("new fields round-trip (time/food/allergic/city)", r.json && r.json.time === "6:30 PM" && r.json.foodType === "jain" && r.json.allergicCount === 7 && r.json.allergicNotes === "5 no nuts, 2 no dairy" && r.json.locationZone === "Surat", JSON.stringify({ t: r.json && r.json.time, f: r.json && r.json.foodType, c: r.json && r.json.allergicCount, z: r.json && r.json.locationZone }));
 
-  // invalid food type / zone rejected
+  // invalid food type rejected
   r = await api("POST", "/api/events", { ...payload, id: id + "-badfood", foodType: "vegan" });
   check("invalid foodType -> 400", r.status === 400, JSON.stringify(r.json));
-  r = await api("POST", "/api/events", { ...payload, id: id + "-badzone", locationZone: "mumbai" });
-  check("invalid zone -> 400", r.status === 400, JSON.stringify(r.json));
   r = await api("POST", "/api/events", payload); // re-create the canonical test event for later steps
 
   // 3. event listed
@@ -83,11 +82,12 @@ async function api(method, path, body) {
   check("invalid PAN -> 400", r.status === 400, JSON.stringify(r.json));
 
   // 6. master persons
-  const heads = [{ id: "head-x", name: "Test Head", persons: ["P1", "P2"] }];
+  const heads = [{ id: "head-x", name: "Test Head", persons: [{ name: "P1" }, { name: "P2" }] }];
   r = await api("PUT", "/api/master-persons", heads);
   check("PUT master-persons -> 200", r.status === 200);
   r = await api("GET", "/api/master-persons");
   check("master-persons round-trips", r.json.length === 1 && r.json[0].persons.length === 2, JSON.stringify(r.json));
+  await api("PUT", "/api/master-persons", originalMasters);
 
   // 7. pre-cost
   r = await api("PUT", `/api/events/${encodeURIComponent(id)}/pre-cost`, { foodCostPerPax: 200, staffCount: 5, totalStaffCost: 5000, decorCharge: 5000, totalCost: 30000, profitLoss: 70000 });
@@ -98,6 +98,7 @@ async function api(method, path, body) {
   r = await api("PUT", `/api/events/${encodeURIComponent(id)}/petty-cash`, { payouts: [{ headId: "head-x", person: "P1", purpose: "advance", amount: 1000 }], petty: [{ expense: "Ice", purpose: "cooling", amount: 300 }] });
   check("PUT petty-cash -> 200", r.status === 200);
   check("petty-cash round-trips", r.json && r.json.payouts.length === 1 && r.json.petty.length === 1, JSON.stringify(r.json));
+  if (Array.isArray(originalMasters)) await api("PUT", "/api/master-persons", originalMasters);
 
   // 9. delete cascade
   r = await api("DELETE", `/api/events/${encodeURIComponent(id)}`);

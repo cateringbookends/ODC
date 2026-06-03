@@ -3,19 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
   <title>Sales Event Dashboard - Sales Intake</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="auth-check.js?v=4"></script>
 </head>
 <body>
   <header class="top-nav">
-    <a class="brand" href="index.html">Event Dashboard</a>
-    <nav aria-label="Primary navigation">
+    <div class="top-nav-bar">
+      <a class="brand" href="index.html">Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
+    </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
       <a class="active" href="index.html">Sales Intake</a>
       <a href="saved-events.html">Saved Events</a>
       <a href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
       <a href="master-persons.html">Master Persons</a>
+      <a href="bill-submission.html">Bill Submission</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>
@@ -40,16 +45,21 @@
             <input type="text" class="date-dmy" id="eventDate" name="eventDate" placeholder="DD-MM-YYYY" autocomplete="off" required>
           </label>
 
-          <label class="field">
+          <label class="field time-field">
             <span>Event Time</span>
-            <div class="time-12" id="eventTime">
-              <select class="t-hour" aria-label="Hour"></select>
-              <span class="t-sep">:</span>
-              <select class="t-min" aria-label="Minute"></select>
-              <select class="t-ampm" aria-label="AM/PM">
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
+            <div class="time-picker" id="eventTime" aria-label="Event Time">
+              <button type="button" class="time-trigger" id="eventTimeTrigger" aria-haspopup="dialog" aria-expanded="false">
+                <span id="eventTimeDisplay">--:-- --</span>
+                <span class="time-trigger-icon" aria-hidden="true">◷</span>
+              </button>
+              <div class="time-popover" id="eventTimePopover" hidden>
+                <div class="time-popover-grid">
+                  <div class="time-column" id="eventTimeHourList" aria-label="Hour"></div>
+                  <span class="time-sep">:</span>
+                  <div class="time-column" id="eventTimeMinuteList" aria-label="Minute"></div>
+                  <div class="time-column" id="eventTimeAmPmList" aria-label="AM or PM"></div>
+                </div>
+              </div>
             </div>
           </label>
         </div>
@@ -65,12 +75,18 @@
         </label>
 
         <label class="field">
-          <span>Zone <small>unlocks city features</small></span>
+          <span>Zone</span>
           <select id="locationZone" name="locationZone">
+            <option value="">Select</option>
             <option value="surat">Surat</option>
             <option value="ahmedabad">Ahmedabad</option>
-            <option value="other" selected>Other (outstation)</option>
+            <option value="other">Other</option>
           </select>
+        </label>
+
+        <label class="field zone-custom-field" id="locationZoneCustomField" hidden>
+          <span>Other City</span>
+          <input type="text" id="locationZoneCustom" name="locationZoneCustom" placeholder="Enter city name">
         </label>
 
         <label class="field">
@@ -104,7 +120,7 @@
 
         <label class="field" style="grid-column: span 2;">
           <span>Allergy / Precaution Notes <small>what to avoid</small></span>
-          <textarea id="allergicNotes" name="allergicNotes" rows="2" placeholder="e.g. 5 guests no nuts, 2 no dairy, avoid shellfish"></textarea>
+          <textarea id="allergicNotes" name="allergicNotes" rows="2" placeholder="e.g. 5 guests no nuts, 2 no dairy, avoid mushrooms"></textarea>
         </label>
 
         <section class="payment-schedule" aria-labelledby="paymentScheduleTitle">
@@ -171,7 +187,7 @@
       
       <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
         <div class="invoice-total invoice-subtotal">
-          <span>Online Subtotal</span>
+          <span>Online Before GST</span>
           <strong id="invoiceSubtotal">Rs. 0.00</strong>
         </div>
         <div class="invoice-total invoice-subtotal">
@@ -201,6 +217,10 @@
           <dd id="summaryCost">Rs. 0.00</dd>
         </div>
         <div>
+          <dt>Billing Before GST</dt>
+          <dd id="baseBilling">Rs. 0.00</dd>
+        </div>
+        <div>
           <dt>Cash Scheduled</dt>
           <dd id="cashScheduled">Rs. 0.00</dd>
         </div>
@@ -209,7 +229,7 @@
           <dd id="onlineScheduled">Rs. 0.00</dd>
         </div>
         <div>
-          <dt>Online GST 5%</dt>
+          <dt>GST 5%</dt>
           <dd id="onlineGst">Rs. 0.00</dd>
         </div>
         <div>
@@ -218,7 +238,7 @@
         </div>
         <div>
           <dt>Advance Due Date</dt>
-          <dd id="advanceDueDate">Select event date</dd>
+          <dd id="advanceDueDate">Select entry date</dd>
         </div>
         <div>
           <dt>Scheduled Total</dt>
@@ -248,9 +268,9 @@
     </aside>
   </main>
 
-  <script src="store.js?v=3"></script>
-  <script src="data.js?v=3"></script>
-  <script src="event-store.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script src="store.js?v=4"></script>
+  <script src="data.js?v=4"></script>
+  <script src="event-store.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

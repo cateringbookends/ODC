@@ -5,6 +5,15 @@ const list = document.querySelector("#eventPickerList");
 const selectedEventId = document.querySelector("#selectedEventId");
 const planningPax = document.querySelector("#planningPax");
 const planningDays = document.querySelector("#planningDays");
+const planningZone = document.querySelector("#planningZone");
+const planningZoneExtraField = document.querySelector("#planningZoneExtraField");
+const planningZoneCity = document.querySelector("#planningZoneCity");
+const outstationCostsSection = document.querySelector("#outstationCostsSection");
+const staffTransportationCharge = document.querySelector("#staffTransportationCharge");
+const staffAccommodationCharge = document.querySelector("#staffAccommodationCharge");
+const staffFoodCost = document.querySelector("#staffFoodCost");
+const refervanCharge = document.querySelector("#refervanCharge");
+const equipmentTransportationCharge = document.querySelector("#equipmentTransportationCharge");
 const foodCostPerPax = document.querySelector("#foodCostPerPax");
 const totalFoodCost = document.querySelector("#totalFoodCost");
 const staffCount = document.querySelector("#staffCount");
@@ -20,6 +29,7 @@ const planningForm = document.querySelector("#planningForm");
 let selectedEvent = null;
 let decorChargeTouched = false;
 let staffCostTouched = false;
+let staffFoodCostTouched = false;
 let saveStatusEl = null;
 
 const DEFAULTS = window.ODC_DATA?.defaults || { decorRate: 0.05, staffCostPerDay: 1000 };
@@ -76,6 +86,7 @@ function renderEvents(query = "") {
       selectedEvent = event;
       selectedEventId.value = event.id;
       trigger.textContent = event.name;
+      trigger.setAttribute("aria-label", event.name);
       updatePlanningContext();
       loadPreCost(event.id);
       closeMenu();
@@ -88,14 +99,33 @@ function renderEvents(query = "") {
 function updatePlanningContext() {
   const pax = selectedEvent?.pax || 0;
   const days = selectedEvent?.days || 0;
+  const rawZone = String(selectedEvent?.locationZone || "").trim();
+  const zone = rawZone.toLowerCase();
+  const isFixedZone = zone === "surat" || zone === "ahmedabad";
+  const isOutstation = !!rawZone && !isFixedZone;
+  const zoneLabel = !rawZone ? "" : isFixedZone ? rawZone.charAt(0).toUpperCase() + rawZone.slice(1).toLowerCase() : "Other";
+
   planningPax.textContent = pax.toLocaleString("en-IN");
   planningDays.textContent = days.toLocaleString("en-IN");
+  planningZone.value = zoneLabel || "";
+  planningZone.placeholder = selectedEvent ? "Zone selected" : "Select event first";
+  planningZoneExtraField.hidden = !isOutstation;
+  planningZoneCity.value = isOutstation ? rawZone : "";
+  outstationCostsSection.hidden = !isOutstation;
+  if (!isOutstation) {
+    [staffTransportationCharge, staffAccommodationCharge, staffFoodCost, refervanCharge, equipmentTransportationCharge].forEach((input) => { input.value = ""; });
+    staffFoodCostTouched = false;
+  }
 }
 
 function updateCostTotals() {
   const pax = selectedEvent?.pax || 0;
   const days = selectedEvent?.days || 0;
   const totalBilling = selectedEvent?.totalBilling || 0;
+  const rawZone = String(selectedEvent?.locationZone || "").trim();
+  const zone = rawZone.toLowerCase();
+  const isFixedZone = zone === "surat" || zone === "ahmedabad";
+  const isOutstation = !!rawZone && !isFixedZone;
   const foodTotal = pax * readNumber(foodCostPerPax);
 
   // Staff cost is driven by Staff No. * per-day rate * days, unless manually overridden.
@@ -103,7 +133,18 @@ function updateCostTotals() {
     const computed = readNumber(staffCount) * (DEFAULTS.staffCostPerDay || 0) * (days || 1);
     if (computed > 0) totalStaffCostInput.value = computed.toFixed(2);
   }
+  if (isOutstation && !staffFoodCostTouched && document.activeElement !== staffFoodCost) {
+    const computed = readNumber(staffCount) * 1000;
+    staffFoodCost.value = computed > 0 ? computed.toFixed(2) : "";
+  }
   const staffTotal = readNumber(totalStaffCostInput);
+  const outstationTotal = isOutstation
+    ? readNumber(staffTransportationCharge) +
+      readNumber(staffAccommodationCharge) +
+      readNumber(staffFoodCost) +
+      readNumber(refervanCharge) +
+      readNumber(equipmentTransportationCharge)
+    : 0;
 
   if (!decorChargeTouched && document.activeElement !== decorCharge) {
     decorCharge.value = (totalBilling * (DEFAULTS.decorRate ?? 0.05)).toFixed(2);
@@ -115,7 +156,8 @@ function updateCostTotals() {
     readNumber(equipmentDepreciation) +
     readNumber(thirdPartyVendor) +
     readNumber(decorCharge) +
-    readNumber(miscellaneousCost);
+    readNumber(miscellaneousCost) +
+    outstationTotal;
   const profitLossAmount = totalBilling - totalCost;
 
   totalFoodCost.value = moneyFormatter.format(foodTotal);
@@ -133,6 +175,11 @@ function collectPreCost() {
     thirdPartyVendor: readNumber(thirdPartyVendor),
     decorCharge: readNumber(decorCharge),
     miscellaneousCost: readNumber(miscellaneousCost),
+    staffTransportationCharge: readNumber(staffTransportationCharge),
+    staffAccommodationCharge: readNumber(staffAccommodationCharge),
+    staffFoodCost: readNumber(staffFoodCost),
+    refervanCharge: readNumber(refervanCharge),
+    equipmentTransportationCharge: readNumber(equipmentTransportationCharge),
     totalCost: (selectedEvent?.totalBilling || 0) - Number.parseFloat(profitLoss.value.replace(/[^0-9.-]/g, "")) || 0,
     profitLoss: Number.parseFloat(profitLoss.value.replace(/[^0-9.-]/g, "")) || 0
   };
@@ -144,6 +191,7 @@ async function loadPreCost(eventId) {
 
   decorChargeTouched = false;
   staffCostTouched = false;
+  staffFoodCostTouched = false;
 
   const set = (input, value) => { input.value = value ? String(value) : ""; };
   if (data) {
@@ -153,10 +201,16 @@ async function loadPreCost(eventId) {
     set(equipmentDepreciation, data.equipmentDepreciation);
     set(thirdPartyVendor, data.thirdPartyVendor);
     set(miscellaneousCost, data.miscellaneousCost);
+    set(staffTransportationCharge, data.staffTransportationCharge);
+    set(staffAccommodationCharge, data.staffAccommodationCharge);
+    set(staffFoodCost, data.staffFoodCost);
+    set(refervanCharge, data.refervanCharge);
+    set(equipmentTransportationCharge, data.equipmentTransportationCharge);
     if (Number(data.totalStaffCost) > 0) staffCostTouched = true;
+    if (Number(data.staffFoodCost) > 0) staffFoodCostTouched = true;
     if (Number(data.decorCharge) > 0) { decorCharge.value = String(data.decorCharge); decorChargeTouched = true; }
   } else {
-    [foodCostPerPax, staffCount, totalStaffCostInput, equipmentDepreciation, thirdPartyVendor, miscellaneousCost].forEach((i) => { i.value = ""; });
+    [foodCostPerPax, staffCount, totalStaffCostInput, equipmentDepreciation, thirdPartyVendor, miscellaneousCost, staffTransportationCharge, staffAccommodationCharge, staffFoodCost, refervanCharge, equipmentTransportationCharge].forEach((i) => { i.value = ""; });
   }
 
   updateCostTotals();
@@ -215,6 +269,11 @@ equipmentDepreciation.addEventListener("input", updateCostTotals);
 thirdPartyVendor.addEventListener("input", updateCostTotals);
 decorCharge.addEventListener("input", () => { decorChargeTouched = true; updateCostTotals(); });
 miscellaneousCost.addEventListener("input", updateCostTotals);
+staffTransportationCharge.addEventListener("input", updateCostTotals);
+staffAccommodationCharge.addEventListener("input", updateCostTotals);
+staffFoodCost.addEventListener("input", () => { staffFoodCostTouched = true; updateCostTotals(); });
+refervanCharge.addEventListener("input", updateCostTotals);
+equipmentTransportationCharge.addEventListener("input", updateCostTotals);
 if (planningForm) planningForm.addEventListener("submit", (e) => e.preventDefault());
 
 document.addEventListener("click", (event) => { if (!event.target.closest(".event-picker")) closeMenu(); });

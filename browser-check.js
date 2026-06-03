@@ -26,18 +26,20 @@ const notesXss = `<img src=x onerror="window.__xss3=1">no nuts`;
   let page = await ctx.newPage();
   let errors = watch(page);
   await page.goto(`${BASE}/index.html`, { waitUntil: "load" });
-  await page.waitForFunction(() => { const s = document.querySelector("#eventTime .t-hour"); return s && s.options.length > 1; }, { timeout: 8000 });
-  ok("index: init ran (time control populated)", true);
+  await page.waitForSelector("#eventTimeTrigger", { timeout: 8000 });
+  ok("index: init ran (time control present)", true);
 
   await page.fill("#entryDate", "30-05-2026");
   await page.fill("#eventDate", "01-09-2026");
   ok("index: date field is strict DD-MM-YYYY", /^\d{2}-\d{2}-\d{4}$/.test(await page.inputValue("#eventDate")), await page.inputValue("#eventDate"));
-  await page.selectOption("#eventTime .t-hour", "6");
-  await page.selectOption("#eventTime .t-min", "30");
-  await page.selectOption("#eventTime .t-ampm", "PM");
+  await page.click("#eventTimeTrigger");
+  await page.locator("#eventTimeHourList .time-option", { hasText: "06" }).click();
+  await page.locator("#eventTimeMinuteList .time-option", { hasText: "30" }).click();
+  await page.locator("#eventTimeAmPmList .time-option", { hasText: "PM" }).click();
   await page.fill("#eventName", xss);
   await page.fill("#location", "QA Venue");
-  await page.selectOption("#locationZone", "surat");
+  await page.selectOption("#locationZone", "other");
+  await page.fill("#locationZoneCustom", "Mumbai");
   await page.fill("#pax", "10");
   await page.fill("#costPerPax", "100");
   await page.selectOption("#foodType", "jain");
@@ -74,8 +76,8 @@ const notesXss = `<img src=x onerror="window.__xss3=1">no nuts`;
   await page.waitForFunction(() => document.querySelector("#eventName") && document.querySelector("#eventName").value.length > 0, { timeout: 8000 });
   ok("saved->edit: form repopulated", (await page.inputValue("#eventName")) === xss && (await page.inputValue("#location")) === "QA Venue");
   ok("saved->edit: date reloads as DD-MM-YYYY", (await page.inputValue("#eventDate")) === "01-09-2026");
-  ok("saved->edit: 12h time reloads", (await page.inputValue("#eventTime .t-hour")) === "6" && (await page.inputValue("#eventTime .t-min")) === "30" && (await page.inputValue("#eventTime .t-ampm")) === "PM");
-  ok("saved->edit: zone + allergic reload", (await page.inputValue("#locationZone")) === "surat" && (await page.inputValue("#allergicCount")) === "7");
+  ok("saved->edit: time reloads", (await page.locator("#eventTimeDisplay").textContent()) === "06:30 PM");
+  ok("saved->edit: city + allergic reload", (await page.inputValue("#locationZone")) === "other" && (await page.inputValue("#locationZoneCustom")) === "Mumbai" && !(await page.locator("#locationZoneCustomField").isHidden()) && (await page.inputValue("#allergicCount")) === "7");
   await page.close();
 
   // delete from saved page

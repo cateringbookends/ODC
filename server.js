@@ -1,24 +1,17 @@
 "use strict";
 
-/**
- * ODC Sales Event Dashboard — zero-dependency Node server.
- *  - Serves the static front-end with live-reload (SSE + fs.watch).
- *  - REST API backed by SQLite (node:sqlite, built into Node >= 22.5).
- *  - Maps the front-end's camelCase shapes to the snake_case DB schema
- *    (resolves the camelCase/snake_case data-model mismatch in one place).
- *  - Validates KYC / numeric input server-side.
- *
- * Run:  node server.js   (or: npm start)
- */
-
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
+const gSync = require("./google-sync.js");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 5050;
-const DB_PATH = path.join(ROOT, "odc.db");
+const DB_PATH = process.env.DB_PATH || path.join(ROOT, "odc.db");
+const GST_RATE = 0.05;
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 /* ----------------------------------------------------------------------- *
  * Database
@@ -28,7 +21,6 @@ const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA foreign_keys = ON;");
 db.exec(fs.readFileSync(path.join(ROOT, "database", "schema.sql"), "utf8"));
 
-// Idempotent migrations for DBs created before a column existed.
 function migrate() {
   const stmts = [
     "ALTER TABLE events ADD COLUMN event_time TEXT",
@@ -43,39 +35,245 @@ function migrate() {
 }
 migrate();
 
-// Seed sample events + master persons on first run (mirrors data.js / master-data.js).
-function seed() {
-  const count = db.prepare("SELECT COUNT(*) AS n FROM events").get().n;
-  if (count === 0) {
-    const samples = [
-      { client_id: "1", external_id: "EVT-2026-001", entry_date: "2026-05-01", event_date: "2026-06-28", event_name: "Grand Royal Wedding Reception", location: "Elysian Palace, Bangalore", pax: 350, event_days: 2, cost_per_pax: 1500, status: "planning" },
-      { client_id: "2", external_id: "EVT-2026-002", entry_date: "2026-05-01", event_date: "2026-07-12", event_name: "Tech Summit Corporate Dinner", location: "Ritz-Carlton, Bangalore", pax: 150, event_days: 1, cost_per_pax: 2200, status: "open" },
-      { client_id: "3", external_id: "EVT-2026-003", entry_date: "2026-05-01", event_date: "2026-05-30", event_name: "Annual Gala Dinner", location: "Lakeside Pavilion, Hyderabad", pax: 500, event_days: 1, cost_per_pax: 1800, status: "open" }
-    ];
-    const ins = db.prepare(
-      `INSERT INTO events (client_id, external_id, entry_date, event_date, event_name, location, pax, event_days, cost_per_pax, total_billing, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-    );
-    for (const s of samples) {
-      ins.run(s.client_id, s.external_id, s.entry_date, s.event_date, s.event_name, s.location, s.pax, s.event_days, s.cost_per_pax, s.pax * s.event_days * s.cost_per_pax, s.status);
-    }
-  }
+function ensureFlexibleCityColumn() {
+  const createSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='events'").get()?.sql || "";
+  if (!createSql.includes("location_zone IN ('surat', 'ahmedabad', 'other')")) return;
 
-  const heads = db.prepare("SELECT COUNT(*) AS n FROM master_heads").get().n;
-  if (heads === 0) {
-    const defaults = [
-      { id: "head-operations", name: "Operations Head", persons: ["Floor Manager", "Logistics Lead", "Service Supervisor"] },
-      { id: "head-kitchen", name: "Kitchen Head", persons: ["Head Chef", "Food Runner Lead", "Utility Lead"] }
-    ];
-    writeMasterPersons(defaults);
+  db.exec("PRAGMA foreign_keys = OFF;");
+  db.exec("BEGIN");
+  try {
+    db.exec(`
+      CREATE TABLE events_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id TEXT UNIQUE,
+        external_id TEXT UNIQUE,
+        entry_date TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        event_name TEXT NOT NULL,
+        location TEXT NOT NULL,
+        pax INTEGER NOT NULL DEFAULT 0,
+        event_days INTEGER NOT NULL DEFAULT 1,
+        cost_per_pax REAL NOT NULL DEFAULT 0,
+        total_billing REAL NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'planning', 'completed', 'cancelled')),
+        event_time TEXT,
+        food_type TEXT CHECK (food_type IS NULL OR food_type IN ('jain', 'non-jain')),
+        allergic_count INTEGER NOT NULL DEFAULT 0,
+        allergic_notes TEXT,
+        location_zone TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO events_new SELECT * FROM events;
+      DROP TABLE events;
+      ALTER TABLE events_new RENAME TO events;
+    `);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON;");
+  }
+}
+ensureFlexibleCityColumn();
+
+function ensurePreCostColumns() {
+  const cols = new Set(db.prepare("PRAGMA table_info(pre_cost_inputs)").all().map((row) => row.name));
+  const additions = [
+    ["staff_transportation_charge", "REAL NOT NULL DEFAULT 0"],
+    ["staff_accommodation_charge", "REAL NOT NULL DEFAULT 0"],
+    ["staff_food_cost", "REAL NOT NULL DEFAULT 0"],
+    ["refervan_charge", "REAL NOT NULL DEFAULT 0"],
+    ["equipment_transportation_charge", "REAL NOT NULL DEFAULT 0"]
+  ];
+  for (const [name, ddl] of additions) {
+    if (!cols.has(name)) db.exec(`ALTER TABLE pre_cost_inputs ADD COLUMN ${name} ${ddl}`);
+  }
+}
+ensurePreCostColumns();
+
+function ensureMasterPersonColumns() {
+  const cols = new Set(db.prepare("PRAGMA table_info(master_persons)").all().map((row) => row.name));
+  const additions = [
+    ["person_code", "TEXT"],
+    ["person_designation", "TEXT"],
+    ["person_department", "TEXT"],
+    ["person_location", "TEXT"]
+  ];
+  for (const [name, ddl] of additions) {
+    if (!cols.has(name)) db.exec(`ALTER TABLE master_persons ADD COLUMN ${name} ${ddl}`);
+  }
+}
+ensureMasterPersonColumns();
+
+function backfillGstInclusiveTotals() {
+  db.prepare("UPDATE events SET total_billing = pax * event_days * cost_per_pax * ?").run(1 + GST_RATE);
+}
+backfillGstInclusiveTotals();
+
+/* ----------------------------------------------------------------------- *
+ * Authentication — in-memory sessions, SHA-256 password hashing
+ * ----------------------------------------------------------------------- */
+
+const sessions = new Map(); // token -> { userId, username, role, expiresAt }
+
+function hashPw(pw) {
+  return crypto.createHash("sha256").update(String(pw)).digest("hex");
+}
+
+function parseCookies(req) {
+  const out = {};
+  for (const part of (req.headers.cookie || "").split(";")) {
+    const idx = part.indexOf("=");
+    if (idx < 0) continue;
+    try {
+      out[decodeURIComponent(part.slice(0, idx).trim())] = decodeURIComponent(part.slice(idx + 1).trim());
+    } catch { /* ignore bad encoding */ }
+  }
+  return out;
+}
+
+function createSession(userId, username, role) {
+  const token = crypto.randomBytes(32).toString("hex");
+  sessions.set(token, { userId, username, role, expiresAt: Date.now() + SESSION_TTL_MS });
+  return token;
+}
+
+function getSession(token) {
+  const s = sessions.get(token);
+  if (!s) return null;
+  if (Date.now() > s.expiresAt) { sessions.delete(token); return null; }
+  return s;
+}
+
+function deleteSession(token) { sessions.delete(token); }
+
+function sessionFromReq(req) {
+  const token = parseCookies(req).odc_session;
+  return token ? getSession(token) : null;
+}
+
+/* ----------------------------------------------------------------------- *
+ * Users
+ * ----------------------------------------------------------------------- */
+
+function getUser(username) {
+  return db.prepare("SELECT * FROM users WHERE username = ?").get(String(username).toLowerCase());
+}
+
+function seedUsers() {
+  const n = db.prepare("SELECT COUNT(*) AS n FROM users").get().n;
+  if (n === 0) {
+    db.prepare("INSERT INTO users (username, password_hash, full_name, role) VALUES (?,?,?,?)")
+      .run("aiops", hashPw("AIops"), "Admin", "admin");
+    console.log("Default admin created  →  username: aiops  password: AIops");
   }
 }
 
-/* ---- Event mapping (DB row <-> API JSON) ---- */
+/* ----------------------------------------------------------------------- *
+ * Audit log
+ * ----------------------------------------------------------------------- */
 
-function mapEventRow(row) {
-  const cycles = db.prepare("SELECT * FROM payment_cycles WHERE event_id = ? ORDER BY id").all(row.id);
-  const kyc = db.prepare("SELECT * FROM invoice_kyc WHERE event_id = ?").get(row.id);
+function auditLog(sess, req, action, entityType, entityId, detail) {
+  try {
+    db.prepare(
+      "INSERT INTO audit_log (user_id, username, action, entity_type, entity_id, detail, ip_address, user_agent) VALUES (?,?,?,?,?,?,?,?)"
+    ).run(
+      sess.userId,
+      sess.username,
+      action,
+      entityType,
+      entityId != null ? String(entityId) : null,
+      detail != null ? String(detail) : null,
+      req.socket.remoteAddress || req.headers["x-forwarded-for"] || null,
+      req.headers["user-agent"] || null
+    );
+  } catch (e) { console.warn("audit log write failed:", e.message); }
+}
+
+function auditLogLogin(username, userId, req, action) {
+  try {
+    db.prepare(
+      "INSERT INTO audit_log (user_id, username, action, entity_type, ip_address, user_agent) VALUES (?,?,?,?,?,?)"
+    ).run(
+      userId, username, action, "auth",
+      req.socket.remoteAddress || req.headers["x-forwarded-for"] || null,
+      req.headers["user-agent"] || null
+    );
+  } catch (e) { console.warn("audit log write failed:", e.message); }
+}
+
+/* ----------------------------------------------------------------------- *
+ * Bill submissions
+ * ----------------------------------------------------------------------- */
+
+function mapBillRow(r) {
+  return {
+    id: r.id,
+    eventClientId: r.event_client_id,
+    eventName: r.event_name,
+    submittedByUserId: r.submitted_by_user_id,
+    headId: r.head_id,
+    headName: r.head_name || r.head_id,
+    personName: r.person_name,
+    amount: r.amount,
+    description: r.description || "",
+    category: r.category,
+    status: r.status,
+    submittedAt: r.submitted_at,
+    reviewedBy: r.reviewed_by || "",
+    reviewedAt: r.reviewed_at || ""
+  };
+}
+
+const BILLS_SQL = `
+  SELECT bs.*, e.event_name, e.client_id AS event_client_id,
+         mh.name AS head_name
+  FROM bill_submissions bs
+  JOIN events e ON e.id = bs.event_id
+  LEFT JOIN master_heads mh ON mh.id = bs.head_id
+`;
+
+function getAllBills() {
+  return db.prepare(BILLS_SQL + " ORDER BY bs.submitted_at DESC").all().map(mapBillRow);
+}
+
+function getUserBills(userId) {
+  return db.prepare(BILLS_SQL + " WHERE bs.submitted_by_user_id = ? ORDER BY bs.submitted_at DESC").all(userId).map(mapBillRow);
+}
+
+function createBill(sess, data) {
+  const ev = findEventRow(String(data.eventId || ""));
+  if (!ev) { const e = new Error("Unknown event."); e.statusCode = 404; throw e; }
+  if (!data.headId || !String(data.personName || "").trim()) {
+    const e = new Error("Head and person name are required."); e.statusCode = 400; throw e;
+  }
+  const amount = Number(data.amount);
+  if (!(amount > 0)) { const e = new Error("Amount must be greater than 0."); e.statusCode = 400; throw e; }
+  const validCategories = ["food", "transport", "equipment", "accommodation", "misc"];
+  const category = validCategories.includes(data.category) ? data.category : "misc";
+  const info = db.prepare(
+    "INSERT INTO bill_submissions (event_id, submitted_by_user_id, head_id, person_name, amount, description, category) VALUES (?,?,?,?,?,?,?)"
+  ).run(ev.id, sess.userId, String(data.headId), String(data.personName).trim(), amount, String(data.description || "").trim(), category);
+  return info.lastInsertRowid;
+}
+
+function reviewBill(billId, status, reviewerUsername) {
+  if (!["approved", "rejected"].includes(status)) {
+    const e = new Error("Status must be 'approved' or 'rejected'."); e.statusCode = 400; throw e;
+  }
+  const info = db.prepare(
+    "UPDATE bill_submissions SET status=?, reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?"
+  ).run(status, reviewerUsername, Number(billId));
+  if (info.changes === 0) { const e = new Error("Bill not found."); e.statusCode = 404; throw e; }
+}
+
+/* ----------------------------------------------------------------------- *
+ * Event mapping (DB row <-> API JSON)
+ * ----------------------------------------------------------------------- */
+
+function mapEventRowWithChildren(row, cycles, kyc) {
   return {
     id: row.client_id,
     externalId: row.external_id,
@@ -92,7 +290,7 @@ function mapEventRow(row) {
     foodType: row.food_type || "",
     allergicCount: row.allergic_count || 0,
     allergicNotes: row.allergic_notes || "",
-    locationZone: row.location_zone || "other",
+    locationZone: row.location_zone || "",
     paymentSchedule: cycles.map((c) => ({
       label: c.cycle_name,
       dueDate: c.due_date || "",
@@ -107,15 +305,37 @@ function mapEventRow(row) {
   };
 }
 
+function mapEventRow(row) {
+  const cycles = db.prepare("SELECT * FROM payment_cycles WHERE event_id = ? ORDER BY id").all(row.id);
+  const kyc = db.prepare("SELECT * FROM invoice_kyc WHERE event_id = ?").get(row.id);
+  return mapEventRowWithChildren(row, cycles, kyc);
+}
+
 function getAllEvents() {
-  return db.prepare("SELECT * FROM events ORDER BY event_date").all().map(mapEventRow);
+  const rows = db.prepare("SELECT * FROM events ORDER BY event_date").all();
+  if (rows.length === 0) return [];
+
+  const cyclesByEvent = new Map();
+  for (const cycle of db.prepare("SELECT * FROM payment_cycles ORDER BY event_id, id").all()) {
+    if (!cyclesByEvent.has(cycle.event_id)) cyclesByEvent.set(cycle.event_id, []);
+    cyclesByEvent.get(cycle.event_id).push(cycle);
+  }
+
+  const kycByEvent = new Map();
+  for (const kyc of db.prepare("SELECT * FROM invoice_kyc").all()) {
+    kycByEvent.set(kyc.event_id, kyc);
+  }
+
+  return rows.map((row) => mapEventRowWithChildren(row, cyclesByEvent.get(row.id) || [], kycByEvent.get(row.id)));
 }
 
 function findEventRow(clientId) {
   return db.prepare("SELECT * FROM events WHERE client_id = ?").get(String(clientId));
 }
 
-/* ---- Validation ---- */
+/* ----------------------------------------------------------------------- *
+ * Validation
+ * ----------------------------------------------------------------------- */
 
 const PATTERNS = {
   mobile: /^\d{10}$/,
@@ -137,8 +357,8 @@ function validateEvent(e) {
   if (!["open", "planning", "completed", "cancelled"].includes(status)) errors.push("Invalid status.");
   const foodType = s(e.foodType);
   if (foodType && !["jain", "non-jain"].includes(foodType)) errors.push("Food type must be Jain or Non-Jain.");
-  const zone = s(e.locationZone);
-  if (zone && !["surat", "ahmedabad", "other"].includes(zone)) errors.push("Zone must be Surat, Ahmedabad or Other.");
+  const city = s(e.locationZone);
+  if (city.length > 80) errors.push("City must be 80 characters or fewer.");
   if (e.allergicCount !== undefined && e.allergicCount !== null && e.allergicCount !== "" && !(Number(e.allergicCount) >= 0)) errors.push("Allergic count must be 0 or more.");
 
   const k = e.invoiceKyc || {};
@@ -155,7 +375,9 @@ function validateEvent(e) {
   return errors;
 }
 
-/* ---- Event write (upsert by client_id, transactional) ---- */
+/* ----------------------------------------------------------------------- *
+ * Event write (upsert by client_id, transactional)
+ * ----------------------------------------------------------------------- */
 
 function upsertEvent(e) {
   const errors = validateEvent(e);
@@ -168,15 +390,15 @@ function upsertEvent(e) {
   const pax = Math.floor(Number(e.pax)) || 0;
   const days = Number(e.days) > 0 ? Math.floor(Number(e.days)) : 1;
   const costPerPax = Number(e.costPerPax) || 0;
-  const totalBilling = pax * days * costPerPax;
+  const baseBilling = pax * days * costPerPax;
+  const totalBilling = baseBilling + (baseBilling * GST_RATE);
   const status = (e.status && String(e.status).trim()) || "open";
   const clientId = String(e.id || `EVT-${Date.now()}`);
   const eventTime = (e.time && String(e.time).trim()) || null;
   const foodType = (e.foodType && String(e.foodType).trim()) || null;
   const allergicCount = Math.max(Math.floor(Number(e.allergicCount) || 0), 0);
   const allergicNotes = (e.allergicNotes != null ? String(e.allergicNotes).trim() : "") || null;
-  const zoneRaw = (e.locationZone && String(e.locationZone).trim()) || "other";
-  const locationZone = ["surat", "ahmedabad", "other"].includes(zoneRaw) ? zoneRaw : "other";
+  const locationZone = (e.locationZone && String(e.locationZone).trim()) || null;
 
   db.exec("BEGIN");
   try {
@@ -232,14 +454,22 @@ function deleteEvent(clientId) {
   return true;
 }
 
-/* ---- Master persons ---- */
+/* ----------------------------------------------------------------------- *
+ * Master persons
+ * ----------------------------------------------------------------------- */
 
 function readMasterPersons() {
   const heads = db.prepare("SELECT * FROM master_heads ORDER BY sort_order, name").all();
   return heads.map((h) => ({
     id: h.id,
     name: h.name,
-    persons: db.prepare("SELECT person_name FROM master_persons WHERE head_id = ? ORDER BY sort_order, id").all(h.id).map((p) => p.person_name)
+    persons: db.prepare("SELECT person_name, person_code, person_designation, person_department, person_location FROM master_persons WHERE head_id = ? ORDER BY sort_order, id").all(h.id).map((p) => ({
+      name: p.person_name,
+      code: p.person_code || "",
+      designation: p.person_designation || "",
+      department: p.person_department || "",
+      location: p.person_location || ""
+    }))
   }));
 }
 
@@ -253,15 +483,25 @@ function writeMasterPersons(heads) {
   try {
     db.exec("DELETE FROM master_persons; DELETE FROM master_heads;");
     const insHead = db.prepare("INSERT INTO master_heads (id, name, sort_order) VALUES (?,?,?)");
-    const insPerson = db.prepare("INSERT INTO master_persons (head_id, person_name, sort_order) VALUES (?,?,?)");
+    const insPerson = db.prepare("INSERT INTO master_persons (head_id, person_name, person_code, person_designation, person_department, person_location, sort_order) VALUES (?,?,?,?,?,?,?)");
     heads.forEach((h, hi) => {
       const id = String(h.id || `head-${hi}`).trim();
       const name = String(h.name || "").trim();
       if (!name) return;
       insHead.run(id, name, hi);
       (Array.isArray(h.persons) ? h.persons : []).forEach((p, pi) => {
-        const person = String(p || "").trim();
-        if (person) insPerson.run(id, person, pi);
+        const person = typeof p === "string" ? { name: p } : (p || {});
+        const personName = String(person.name || person.personName || "").trim();
+        if (!personName) return;
+        insPerson.run(
+          id,
+          personName,
+          String(person.code || person.employeeCode || "").trim() || null,
+          String(person.designation || "").trim() || null,
+          String(person.department || "").trim() || null,
+          String(person.location || "").trim() || null,
+          pi
+        );
       });
     });
     db.exec("COMMIT");
@@ -272,7 +512,9 @@ function writeMasterPersons(heads) {
   return readMasterPersons();
 }
 
-/* ---- Petty cash (per event) ---- */
+/* ----------------------------------------------------------------------- *
+ * Petty cash (per event)
+ * ----------------------------------------------------------------------- */
 
 function readPettyCash(clientId) {
   const ev = findEventRow(clientId);
@@ -308,10 +550,12 @@ function writePettyCash(clientId, data) {
   return readPettyCash(clientId);
 }
 
-/* ---- Pre-cost inputs (per event) ---- */
+/* ----------------------------------------------------------------------- *
+ * Pre-cost inputs (per event)
+ * ----------------------------------------------------------------------- */
 
-const PRECOST_FIELDS = ["foodCostPerPax", "staffCount", "totalStaffCost", "equipmentDepreciation", "thirdPartyVendor", "decorCharge", "miscellaneousCost", "totalCost", "profitLoss"];
-const PRECOST_COLS = ["food_cost_per_pax", "staff_count", "total_staff_cost", "equipment_depreciation", "third_party_vendor", "decor_charge", "miscellaneous_cost", "total_cost", "profit_loss"];
+const PRECOST_FIELDS = ["foodCostPerPax", "staffCount", "totalStaffCost", "equipmentDepreciation", "thirdPartyVendor", "decorCharge", "miscellaneousCost", "staffTransportationCharge", "staffAccommodationCharge", "staffFoodCost", "refervanCharge", "equipmentTransportationCharge", "totalCost", "profitLoss"];
+const PRECOST_COLS = ["food_cost_per_pax", "staff_count", "total_staff_cost", "equipment_depreciation", "third_party_vendor", "decor_charge", "miscellaneous_cost", "staff_transportation_charge", "staff_accommodation_charge", "staff_food_cost", "refervan_charge", "equipment_transportation_charge", "total_cost", "profit_loss"];
 
 function readPreCost(clientId) {
   const ev = findEventRow(clientId);
@@ -336,6 +580,38 @@ function writePreCost(clientId, data) {
      ON CONFLICT(event_id) DO UPDATE SET ${PRECOST_COLS.map((c) => `${c}=excluded.${c}`).join(", ")}, updated_at=CURRENT_TIMESTAMP`
   ).run(ev.id, ...vals);
   return readPreCost(clientId);
+}
+
+/* ----------------------------------------------------------------------- *
+ * Seed
+ * ----------------------------------------------------------------------- */
+
+function seed() {
+  const count = db.prepare("SELECT COUNT(*) AS n FROM events").get().n;
+  if (count === 0) {
+    const samples = [
+      { client_id: "1", external_id: "EVT-2026-001", entry_date: "2026-05-01", event_date: "2026-06-28", event_name: "Grand Royal Wedding Reception", location: "Elysian Palace, Bangalore", pax: 350, event_days: 2, cost_per_pax: 1500, status: "planning" },
+      { client_id: "2", external_id: "EVT-2026-002", entry_date: "2026-05-01", event_date: "2026-07-12", event_name: "Tech Summit Corporate Dinner", location: "Ritz-Carlton, Bangalore", pax: 150, event_days: 1, cost_per_pax: 2200, status: "open" },
+      { client_id: "3", external_id: "EVT-2026-003", entry_date: "2026-05-01", event_date: "2026-05-30", event_name: "Annual Gala Dinner", location: "Lakeside Pavilion, Hyderabad", pax: 500, event_days: 1, cost_per_pax: 1800, status: "open" }
+    ];
+    const ins = db.prepare(
+      `INSERT INTO events (client_id, external_id, entry_date, event_date, event_name, location, pax, event_days, cost_per_pax, total_billing, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+    );
+    for (const s of samples) {
+      const baseBilling = s.pax * s.event_days * s.cost_per_pax;
+      ins.run(s.client_id, s.external_id, s.entry_date, s.event_date, s.event_name, s.location, s.pax, s.event_days, s.cost_per_pax, baseBilling + (baseBilling * GST_RATE), s.status);
+    }
+  }
+
+  const heads = db.prepare("SELECT COUNT(*) AS n FROM master_heads").get().n;
+  if (heads === 0) {
+    const defaults = [
+      { id: "head-operations", name: "Operations Head", persons: ["Floor Manager", "Logistics Lead", "Service Supervisor"] },
+      { id: "head-kitchen", name: "Kitchen Head", persons: ["Head Chef", "Food Runner Lead", "Utility Lead"] }
+    ];
+    writeMasterPersons(defaults);
+  }
 }
 
 /* ----------------------------------------------------------------------- *
@@ -402,31 +678,213 @@ async function handleApi(req, res, url) {
   const m = req.method;
 
   try {
-    // /api/events
+    // ================================================================
+    // PUBLIC AUTH ROUTES (no session required)
+    // ================================================================
+
+    // POST /api/auth/login
+    if (sub[0] === "auth" && sub[1] === "login" && m === "POST") {
+      const body = await readBody(req);
+      const username = String(body?.username || "").trim().toLowerCase();
+      const user = getUser(username);
+      if (!user || user.password_hash !== hashPw(body?.password || "")) {
+        return sendJson(res, 401, { error: "Invalid username or password." });
+      }
+      const token = createSession(user.id, user.username, user.role);
+      auditLogLogin(user.username, user.id, req, "LOGIN");
+      res.setHeader("Set-Cookie", `odc_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`);
+      return sendJson(res, 200, { username: user.username, role: user.role, fullName: user.full_name });
+    }
+
+    // GET /api/auth/me
+    if (sub[0] === "auth" && sub[1] === "me" && m === "GET") {
+      const s = sessionFromReq(req);
+      if (!s) return sendJson(res, 401, { error: "Not authenticated" });
+      return sendJson(res, 200, { username: s.username, role: s.role });
+    }
+
+    // POST /api/auth/logout
+    if (sub[0] === "auth" && sub[1] === "logout" && m === "POST") {
+      const token = parseCookies(req).odc_session;
+      const s = token ? getSession(token) : null;
+      if (s) {
+        auditLogLogin(s.username, s.userId, req, "LOGOUT");
+        deleteSession(token);
+      }
+      res.setHeader("Set-Cookie", "odc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // ================================================================
+    // ALL OTHER ROUTES REQUIRE A VALID SESSION
+    // ================================================================
+    const sess = sessionFromReq(req);
+    if (!sess) return sendJson(res, 401, { error: "Not authenticated" });
+
+    // ================================================================
+    // ADMIN: User management  /api/auth/users[/:username[/password]]
+    // ================================================================
+    if (sub[0] === "auth" && sub[1] === "users") {
+      if (sess.role !== "admin") return sendJson(res, 403, { error: "Admin only." });
+
+      // GET /api/auth/users
+      if (sub.length === 2 && m === "GET") {
+        const users = db.prepare("SELECT id, username, full_name, role, created_at FROM users ORDER BY id").all();
+        return sendJson(res, 200, users.map((u) => ({ id: u.id, username: u.username, fullName: u.full_name, role: u.role, createdAt: u.created_at })));
+      }
+
+      // POST /api/auth/users  (create)
+      if (sub.length === 2 && m === "POST") {
+        const body = await readBody(req);
+        const uname = String(body?.username || "").trim().toLowerCase();
+        const pw = String(body?.password || "");
+        if (!uname || pw.length < 4) return sendJson(res, 400, { error: "Username and password (min 4 chars) required." });
+        const role = body?.role === "admin" ? "admin" : "user";
+        try {
+          db.prepare("INSERT INTO users (username, password_hash, full_name, role) VALUES (?,?,?,?)")
+            .run(uname, hashPw(pw), String(body?.fullName || "").trim(), role);
+          auditLog(sess, req, "CREATE", "user", uname, null);
+          return sendJson(res, 200, { ok: true });
+        } catch (e) {
+          if (e.message.includes("UNIQUE")) return sendJson(res, 409, { error: "Username already exists." });
+          throw e;
+        }
+      }
+
+      // DELETE /api/auth/users/:username
+      if (sub.length === 3 && m === "DELETE") {
+        const target = decodeURIComponent(sub[2]);
+        if (target === "aiops") return sendJson(res, 400, { error: "Cannot delete the default admin account." });
+        db.prepare("DELETE FROM users WHERE username = ?").run(target);
+        auditLog(sess, req, "DELETE", "user", target, null);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      // PUT /api/auth/users/:username/password
+      if (sub.length === 4 && sub[3] === "password" && m === "PUT") {
+        const target = decodeURIComponent(sub[2]);
+        const body = await readBody(req);
+        const pw = String(body?.password || "");
+        if (pw.length < 4) return sendJson(res, 400, { error: "Password must be at least 4 characters." });
+        db.prepare("UPDATE users SET password_hash = ? WHERE username = ?").run(hashPw(pw), target);
+        auditLog(sess, req, "UPDATE", "user", target, "password changed");
+        return sendJson(res, 200, { ok: true });
+      }
+
+      return sendJson(res, 404, { error: "Unknown auth/users endpoint" });
+    }
+
+    // ================================================================
+    // ADMIN: Audit log  GET /api/audit-log
+    // ================================================================
+    if (sub[0] === "audit-log" && m === "GET") {
+      if (sess.role !== "admin") return sendJson(res, 403, { error: "Admin only." });
+      const limit = Math.min(Number(url.searchParams.get("limit")) || 200, 2000);
+      const rows = db.prepare("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?").all(limit);
+      return sendJson(res, 200, rows);
+    }
+
+    // ================================================================
+    // Bill submissions  /api/bills[/:id]
+    // ================================================================
+    if (sub[0] === "bills") {
+      if (sub.length === 1) {
+        if (m === "GET") {
+          return sendJson(res, 200, sess.role === "admin" ? getAllBills() : getUserBills(sess.userId));
+        }
+        if (m === "POST") {
+          const body = await readBody(req);
+          const billId = createBill(sess, body || {});
+          auditLog(sess, req, "CREATE", "bill", String(billId), null);
+          if (gSync.isEnabled()) gSync.syncBills(getAllBills());
+          return sendJson(res, 200, { ok: true, id: billId });
+        }
+      }
+      if (sub.length === 2 && m === "PUT") {
+        if (sess.role !== "admin") return sendJson(res, 403, { error: "Admin only." });
+        const body = await readBody(req);
+        reviewBill(Number(sub[1]), body?.status, sess.username);
+        auditLog(sess, req, "UPDATE", "bill", sub[1], body?.status);
+        if (gSync.isEnabled()) gSync.syncBills(getAllBills());
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendJson(res, 404, { error: "Unknown bills endpoint" });
+    }
+
+    // ================================================================
+    // Events
+    // ================================================================
     if (sub[0] === "events" && sub.length === 1) {
       if (m === "GET") return sendJson(res, 200, getAllEvents());
-      if (m === "POST") return sendJson(res, 200, upsertEvent(await readBody(req) || {}));
+      if (m === "POST") {
+        const body = await readBody(req) || {};
+        const existed = body.id ? !!findEventRow(String(body.id)) : false;
+        const result = upsertEvent(body);
+        auditLog(sess, req, existed ? "UPDATE" : "CREATE", "event", result.id, null);
+        if (gSync.isEnabled()) {
+          const evs = getAllEvents();
+          gSync.syncEvents(evs);
+          gSync.syncPaymentSchedule(evs);
+          gSync.syncInvoiceKYC(evs);
+        }
+        return sendJson(res, 200, result);
+      }
     }
-    // /api/events/:id  and sub-resources
+
     if (sub[0] === "events" && sub.length >= 2) {
       const id = decodeURIComponent(sub[1]);
       if (sub.length === 2) {
-        if (m === "DELETE") return deleteEvent(id) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "Not found" });
+        if (m === "DELETE") {
+          const ok = deleteEvent(id);
+          if (ok) {
+            auditLog(sess, req, "DELETE", "event", id, null);
+            if (gSync.isEnabled()) {
+              const evs = getAllEvents();
+              gSync.syncEvents(evs);
+              gSync.syncPaymentSchedule(evs);
+              gSync.syncInvoiceKYC(evs);
+            }
+          }
+          return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "Not found" });
+        }
       }
       if (sub.length === 3 && sub[2] === "petty-cash") {
         if (m === "GET") return sendJson(res, 200, readPettyCash(id));
-        if (m === "PUT") return sendJson(res, 200, writePettyCash(id, (await readBody(req)) || {}));
+        if (m === "PUT") {
+          const result = writePettyCash(id, (await readBody(req)) || {});
+          auditLog(sess, req, "UPDATE", "petty-cash", id, null);
+          if (gSync.isEnabled()) {
+            const evs = getAllEvents();
+            gSync.syncPettyCash(evs.map((ev) => ({ eventId: ev.id, eventName: ev.name, data: readPettyCash(ev.id) })));
+          }
+          return sendJson(res, 200, result);
+        }
       }
       if (sub.length === 3 && sub[2] === "pre-cost") {
         if (m === "GET") return sendJson(res, 200, readPreCost(id));
-        if (m === "PUT") return sendJson(res, 200, writePreCost(id, (await readBody(req)) || {}));
+        if (m === "PUT") {
+          const result = writePreCost(id, (await readBody(req)) || {});
+          auditLog(sess, req, "UPDATE", "pre-cost", id, null);
+          if (gSync.isEnabled()) {
+            const evs = getAllEvents();
+            gSync.syncPreCost(evs.map((ev) => ({ eventId: ev.id, eventName: ev.name, data: readPreCost(ev.id) })));
+          }
+          return sendJson(res, 200, result);
+        }
       }
     }
-    // /api/master-persons
+
+    // Master persons
     if (sub[0] === "master-persons" && sub.length === 1) {
       if (m === "GET") return sendJson(res, 200, readMasterPersons());
-      if (m === "PUT") return sendJson(res, 200, writeMasterPersons((await readBody(req)) || []));
+      if (m === "PUT") {
+        const result = writeMasterPersons((await readBody(req)) || []);
+        auditLog(sess, req, "UPDATE", "master-persons", null, null);
+        if (gSync.isEnabled()) gSync.syncMasterPersons(result);
+        return sendJson(res, 200, result);
+      }
     }
+
     return sendJson(res, 404, { error: "Unknown endpoint" });
   } catch (err) {
     const code = err.statusCode || 500;
@@ -484,7 +942,9 @@ const server = http.createServer((req, res) => {
 });
 
 seed();
-server.listen(PORT, () => {
-  console.log(`ODC dashboard running:  http://localhost:${PORT}`);
+seedUsers();
+gSync.loadConfig();
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`ODC dashboard running:  http://0.0.0.0:${PORT}`);
   console.log(`SQLite DB: ${DB_PATH}  |  live-reload: on`);
 });

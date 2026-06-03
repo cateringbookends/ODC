@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Login - Event Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="login-page">
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="login-brand-dot"></span>
+      Event Dashboard
+    </div>
+    <h1 class="login-title">Sign in</h1>
+    <form id="loginForm" class="login-form" novalidate>
+      <div class="field-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" spellcheck="false" required>
+      </div>
+      <div class="field-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <p id="loginError" class="login-error" hidden></p>
+      <button type="submit" class="primary-button login-submit" id="loginBtn">Sign in</button>
+    </form>
+  </div>
+  <script src="login.js?v=4"></script>
+</body>
+</html>
