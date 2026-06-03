@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
-  <title>Saved Events - Event Dashboard</title>
+  <title>Event Dashboard</title>
   <link rel="stylesheet" href="styles.css">
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -22,7 +22,7 @@
     </div>
     <nav class="top-nav-links" aria-label="Primary navigation">
       <a href="index.html">Sales Intake</a>
-      <a class="active" href="saved-events.html">Saved Events</a>
+      <a href="saved-events.html">Saved Events</a>
       <a href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
       <a href="master-persons.html">Master Persons</a>
@@ -32,26 +32,14 @@
     </nav>
   </header>
 
-  <main class="app-shell planning-shell">
-    <section class="panel">
-      <div class="panel-header">
-        <p class="eyebrow">Saved Work</p>
-        <h1>Saved Events</h1>
-      </div>
-
-      <div class="saved-controls">
-        <input type="search" id="savedSearch" class="saved-search" placeholder="Search by name, location or ID">
-        <button type="button" class="secondary-button" id="newEventLink">+ New Event</button>
-        <button type="button" class="secondary-button" id="exportCsv">Export CSV</button>
-      </div>
-
-      <div class="saved-events-list" id="savedEventsList"></div>
-    </section>
+  <main class="app-shell" style="display:block;max-width:1200px;margin:0 auto;padding:24px" id="mainContent">
+    <div id="loadingState" style="text-align:center;padding:4rem;color:var(--muted)">Loading event...</div>
   </main>
 
   <script src="store.js?v=5"></script>
   <script src="data.js?v=5"></script>
   <script src="event-store.js?v=5"></script>
-  <script src="saved-events.js?v=5"></script>
+  <script src="master-data.js?v=5"></script>
+  <script src="event-dashboard.js?v=5"></script>
 </body>
 </html>

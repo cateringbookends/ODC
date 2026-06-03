@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Analytics - Event Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js?v=5"></script>
+  <script src="firebase-backend.js?v=5"></script>
+  <script src="firebase-auth.js?v=5"></script>
+</head>
+<body>
+  <header class="top-nav">
+    <div class="top-nav-bar">
+      <a class="brand" href="index.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
+    </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="index.html">Sales Intake</a>
+      <a href="saved-events.html">Saved Events</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a href="bill-submission.html">Bill Submission</a>
+      <a class="active" href="analytics.html">Analytics</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell" style="display:block;max-width:1200px;margin:0 auto;padding:24px">
+
+    <div class="panel-header" style="margin-bottom:1.5rem">
+      <p class="eyebrow">Reporting</p>
+      <h1>Analytics & P&L Dashboard</h1>
+    </div>
+
+    <!-- Filters -->
+    <div class="panel" style="margin-bottom:1.5rem">
+      <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-end">
+        <div class="field-group" style="min-width:130px">
+          <label>From Month</label>
+          <input type="month" id="filterFrom">
+        </div>
+        <div class="field-group" style="min-width:130px">
+          <label>To Month</label>
+          <input type="month" id="filterTo">
+        </div>
+        <div class="field-group" style="min-width:140px">
+          <label>Zone / Location</label>
+          <select id="filterZone">
+            <option value="">All Zones</option>
+            <option value="surat">Surat</option>
+            <option value="ahmedabad">Ahmedabad</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field-group" style="min-width:140px">
+          <label>Status</label>
+          <select id="filterStatus">
+            <option value="">All Statuses</option>
+            <option value="open">Open</option>
+            <option value="planning">Planning</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="field-group" style="min-width:160px">
+          <label>Department</label>
+          <select id="filterDept">
+            <option value="">All Departments</option>
+          </select>
+        </div>
+        <button class="primary-button" id="applyFilters" style="height:40px;margin-top:auto">Apply</button>
+        <button class="secondary-button" id="resetFilters" style="height:40px;margin-top:auto">Reset</button>
+      </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div id="summaryCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem"></div>
+
+    <!-- Group selector -->
+    <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <span style="font-size:.82rem;color:var(--muted);align-self:center">Group by:</span>
+      <button class="group-btn secondary-button active" data-group="month" style="font-size:.78rem;padding:.3rem .8rem">Month</button>
+      <button class="group-btn secondary-button" data-group="zone" style="font-size:.78rem;padding:.3rem .8rem">Location</button>
+      <button class="group-btn secondary-button" data-group="dept" style="font-size:.78rem;padding:.3rem .8rem">Department</button>
+      <button class="group-btn secondary-button" data-group="status" style="font-size:.78rem;padding:.3rem .8rem">Status</button>
+    </div>
+
+    <!-- Chart -->
+    <div class="panel" style="margin-bottom:1.5rem">
+      <div class="panel-header"><h2 id="chartTitle">Monthly Breakdown</h2></div>
+      <div id="chartArea" style="overflow-x:auto;padding-top:.5rem"></div>
+    </div>
+
+    <!-- Detail Table -->
+    <div class="panel">
+      <div class="panel-header" style="margin-bottom:1rem">
+        <h2>Event Detail</h2>
+        <button class="secondary-button" id="exportCsv" style="font-size:.78rem;padding:.3rem .8rem">Export CSV</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table id="detailTable" style="width:100%;border-collapse:collapse;font-size:.84rem">
+          <thead id="detailHead"></thead>
+          <tbody id="detailBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="store.js?v=5"></script>
+  <script src="data.js?v=5"></script>
+  <script src="event-store.js?v=5"></script>
+  <script src="master-data.js?v=5"></script>
+  <script src="analytics.js?v=5"></script>
+</body>
+</html>

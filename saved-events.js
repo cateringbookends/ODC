@@ -79,6 +79,12 @@ function renderList() {
     editBtn.textContent = "Edit";
     editBtn.addEventListener("click", () => { window.location.href = `index.html?edit=${encodeURIComponent(event.id)}`; });
 
+    const dashBtn = document.createElement("button");
+    dashBtn.type = "button";
+    dashBtn.className = "secondary-button";
+    dashBtn.textContent = "Dashboard";
+    dashBtn.addEventListener("click", () => { window.location.href = `event-dashboard.html?id=${encodeURIComponent(event.id)}`; });
+
     const delBtn = document.createElement("button");
     delBtn.type = "button";
     delBtn.className = "secondary-button danger";
@@ -96,7 +102,7 @@ function renderList() {
       }
     });
 
-    controls.append(statusSelect, editBtn, delBtn);
+    controls.append(statusSelect, editBtn, dashBtn, delBtn);
     item.append(info, out, controls);
     savedEventsList.append(item);
   });

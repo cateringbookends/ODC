@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://cdn.jsdelivr.net; script-src 'self' https://www.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self' blob:; worker-src blob:">
   <title>Bill Submission - Event Dashboard</title>
   <link rel="stylesheet" href="styles.css">
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -13,6 +13,7 @@
   <script src="firebase-config.js?v=5"></script>
   <script src="firebase-backend.js?v=5"></script>
   <script src="firebase-auth.js?v=5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
   <header class="top-nav">
@@ -27,6 +28,7 @@
       <a href="petty-cash.html">Petty Cash</a>
       <a href="master-persons.html">Master Persons</a>
       <a class="active" href="bill-submission.html">Bill Submission</a>
+      <a href="analytics.html">Analytics</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>
@@ -36,6 +38,19 @@
       <div class="panel-header">
         <p class="eyebrow">Staff Portal</p>
         <h1>Submit Bill / Expense</h1>
+      </div>
+
+      <!-- Receipt OCR Scanner -->
+      <div style="background:var(--surface-soft);border:2px dashed var(--line);border-radius:var(--radius-md);padding:1rem;margin-bottom:1rem">
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+          <label for="receiptFile" style="cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.35rem .8rem;font-size:.82rem;font-weight:500">
+            📷 Scan Receipt
+            <input type="file" id="receiptFile" accept="image/*,application/pdf" style="display:none">
+          </label>
+          <span style="font-size:.78rem;color:var(--muted)">Upload receipt photo → auto-fills amount & category</span>
+          <span id="ocrStatus" style="font-size:.78rem;color:var(--accent);font-weight:500"></span>
+        </div>
+        <div id="ocrResult" hidden style="margin-top:.75rem;padding:.5rem .75rem;background:var(--surface);border-radius:6px;font-size:.82rem;color:var(--muted)"></div>
       </div>
 
       <div class="form-body">
@@ -48,12 +63,16 @@
         <div class="field-group">
           <label for="billHead">Department Head <span style="color:#dc2626">*</span></label>
           <select id="billHead">
-            <option value="">— Select head —</option>
+            <option value="">— Select head (from petty cash) —</option>
           </select>
+          <span id="headHint" style="font-size:.75rem;color:var(--muted)"></span>
         </div>
         <div class="field-group">
           <label for="billPerson">Your Name <span style="color:#dc2626">*</span></label>
-          <input type="text" id="billPerson" placeholder="Enter your name">
+          <select id="billPerson" style="display:none">
+            <option value="">— Select person —</option>
+          </select>
+          <input type="text" id="billPersonText" placeholder="Enter your name">
         </div>
         <div class="cost-grid" style="grid-template-columns:1fr 1fr;gap:14px">
           <div class="field-group">
