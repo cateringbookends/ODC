@@ -1,5 +1,5 @@
-// REPLACE THIS with your Firebase config from console.firebase.google.com
-// Project Settings → Your apps → Web app → Config
+// REPLACE the values below with your Firebase config.
+// Firebase console → Project Settings → Your apps → Web app → Config
 const firebaseConfig = {
   apiKey: "REPLACE_ME",
   authDomain: "REPLACE_ME",
@@ -9,6 +9,15 @@ const firebaseConfig = {
   appId: "REPLACE_ME"
 };
 
-firebase.initializeApp(firebaseConfig);
-window.ODC_DB   = firebase.firestore();
-window.ODC_AUTH = firebase.auth();
+// Detect if Firebase is configured yet
+window.FIREBASE_READY = firebaseConfig.apiKey !== "REPLACE_ME";
+
+if (window.FIREBASE_READY) {
+  firebase.initializeApp(firebaseConfig);
+  window.ODC_DB   = firebase.firestore();
+  window.ODC_AUTH = firebase.auth();
+} else {
+  // Fallback: use local Node.js server auth (localhost:5050)
+  window.ODC_DB   = null;
+  window.ODC_AUTH = null;
+}
