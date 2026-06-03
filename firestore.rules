@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isAuth() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Events — any logged-in user can read/write
+    match /events/{id} {
+      allow read, write: if isAuth();
+    }
+
+    // Config (masterPersons) — anyone reads, only admin writes
+    match /config/{doc} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // Petty cash & pre-cost — any logged-in user
+    match /pettyCash/{id} {
+      allow read, write: if isAuth();
+    }
+    match /preCost/{id} {
+      allow read, write: if isAuth();
+    }
+
+    // Bills — anyone submits, only admin reviews/deletes
+    match /bills/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Users — admin manages, user can read own profile
+    match /users/{uid} {
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+
+    // Audit log — admin reads, anyone writes, nobody edits/deletes
+    match /auditLog/{id} {
+      allow read: if isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+  }
+}

@@ -16,20 +16,46 @@ window.ODC = (function () {
   let resolveReady;
   const ready = new Promise((res) => { resolveReady = res; });
 
+  // api() — routes to Firebase backend (firebase-backend.js)
+  // Keeps the same call signature so event-store.js / master-data.js work unchanged.
   async function api(method, pathName, body) {
-    const res = await fetch(pathName, {
-      method,
-      headers: body !== undefined ? { "Content-Type": "application/json" } : {},
-      body: body !== undefined ? JSON.stringify(body) : undefined
-    });
-    if (!res.ok) {
-      let msg = `${res.status}`;
-      try { const j = await res.json(); if (j && j.error) msg = j.error; } catch { /* ignore */ }
-      throw new Error(msg);
+    if (!window.FB) throw new Error("Firebase backend not loaded");
+    const m = method.toUpperCase();
+    // Events
+    if (pathName === "/api/events" && m === "GET")  return FB.getAllEvents();
+    if (pathName === "/api/events" && m === "POST") return FB.upsertEvent(body);
+    if (pathName.match(/^\/api\/events\/([^/]+)$/) && m === "DELETE") {
+      const id = decodeURIComponent(pathName.split("/")[3]);
+      return FB.deleteEvent(id);
     }
-    if (res.status === 204) return null;
-    const text = await res.text();
-    return text ? JSON.parse(text) : null;
+    if (pathName.match(/^\/api\/events\/([^/]+)\/petty-cash$/)) {
+      const id = decodeURIComponent(pathName.split("/")[3]);
+      if (m === "GET") return FB.getPettyCash(id);
+      if (m === "PUT") return FB.savePettyCash(id, body);
+    }
+    if (pathName.match(/^\/api\/events\/([^/]+)\/pre-cost$/)) {
+      const id = decodeURIComponent(pathName.split("/")[3]);
+      if (m === "GET") return FB.getPreCost(id);
+      if (m === "PUT") return FB.savePreCost(id, body);
+    }
+    // Master persons
+    if (pathName === "/api/master-persons" && m === "GET") return FB.getMasterPersons();
+    if (pathName === "/api/master-persons" && m === "PUT") return FB.saveMasterPersons(body);
+    // Bills
+    if (pathName === "/api/bills" && m === "GET")  return FB.getBills(window.ODC_USER && window.ODC_USER.role === "admin");
+    if (pathName === "/api/bills" && m === "POST") return FB.createBill(body);
+    if (pathName.match(/^\/api\/bills\/([^/]+)$/) && m === "PUT") {
+      const id = pathName.split("/")[3];
+      return FB.reviewBill(id, body.status, window.ODC_USER ? window.ODC_USER.username : "admin");
+    }
+    // Users
+    if (pathName === "/api/auth/users" && m === "GET") return FB.getAllUsers();
+    if (pathName === "/api/auth/users" && m === "POST") return FB.createUser(body.username, body.password, body.fullName, body.role);
+    if (pathName.match(/^\/api\/auth\/users\/([^/]+)$/) && m === "DELETE") {
+      const uid = decodeURIComponent(pathName.split("/")[4]);
+      return FB.deleteUser(uid);
+    }
+    throw new Error("Unknown API path: " + pathName);
   }
 
   const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };

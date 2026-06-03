@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Pre Cost Planning - Other Preview</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top-nav">
+    <a class="brand" href="index.html">Event Dashboard</a>
+    <nav aria-label="Primary navigation">
+      <a href="index.html">Sales Intake</a>
+      <a href="saved-events.html">Saved Events</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="pre-cost-other-preview.html" class="active">Other Preview</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell preview-shell">
+    <section class="panel preview-panel">
+      <div class="panel-header">
+        <p class="eyebrow">Pre Cost Planning</p>
+        <h1>Other Zone Preview</h1>
+      </div>
+
+      <form class="intake-form" id="otherPreviewForm">
+        <label class="field">
+          <span>Planning Date</span>
+          <input type="text" class="date-dmy" id="planningDate" placeholder="DD-MM-YYYY" autocomplete="off" value="30-05-2026">
+        </label>
+
+        <label class="field">
+          <span>Zone</span>
+          <input type="text" id="planningZone" value="Other" readonly>
+        </label>
+
+        <label class="field zone-custom-field" style="grid-column: span 2;">
+          <span>City</span>
+          <input type="text" id="planningCity" value="Mumbai" placeholder="Outstation city">
+        </label>
+
+        <div class="cost-grid food-cost-row">
+          <label class="field">
+            <span>PAX</span>
+            <input type="number" id="pax" min="0" step="1" value="500">
+          </label>
+          <label class="field">
+            <span>No. of Days</span>
+            <input type="number" id="days" min="1" step="1" value="1">
+          </label>
+          <label class="field">
+            <span>Cost per PAX</span>
+            <input type="number" id="costPerPax" min="0" step="0.01" value="5000">
+          </label>
+          <label class="field">
+            <span>Food Cost <small>per PAX</small></span>
+            <input type="number" id="foodCostPerPax" min="0" step="0.01" value="250">
+          </label>
+          <label class="field">
+            <span>Total Food Cost</span>
+            <input type="text" id="totalFoodCost" readonly>
+          </label>
+        </div>
+
+        <div class="cost-grid staff-cost-row">
+          <label class="field">
+            <span>Staff No.</span>
+            <input type="number" id="staffCount" min="0" step="1" value="15">
+          </label>
+          <label class="field">
+            <span>Total Staff Cost</span>
+            <input type="number" id="totalStaffCostInput" min="0" step="0.01" value="15000">
+          </label>
+          <label class="field">
+            <span>Staff Food Cost <small>1000 * Staff No.</small></span>
+            <input type="number" id="staffFoodCost" min="0" step="0.01" value="15000">
+          </label>
+        </div>
+
+        <section class="outstation-costs" aria-labelledby="outstationCostsTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Outstation Costs</p>
+            <h2 id="outstationCostsTitle">Additional Charges</h2>
+          </div>
+
+          <div class="cost-grid outstation-grid">
+            <label class="field">
+              <span>Staff Transportation Charge</span>
+              <input type="number" id="staffTransportationCharge" min="0" step="0.01" value="25000">
+            </label>
+            <label class="field">
+              <span>Staff Accommodation Charge</span>
+              <input type="number" id="staffAccommodationCharge" min="0" step="0.01" value="40000">
+            </label>
+            <label class="field">
+              <span>Refeervan</span>
+              <input type="number" id="refervanCharge" min="0" step="0.01" value="20000">
+            </label>
+            <label class="field">
+              <span>Equipment Transportation</span>
+              <input type="number" id="equipmentTransportationCharge" min="0" step="0.01" value="12000">
+            </label>
+            <label class="field">
+              <span>Equipment Depreciation</span>
+              <input type="number" id="equipmentDepreciation" min="0" step="0.01" value="10000">
+            </label>
+            <label class="field">
+              <span>Third Party Vendor</span>
+              <input type="number" id="thirdPartyVendor" min="0" step="0.01" value="5000">
+            </label>
+            <label class="field">
+              <span>Decor Charge <small>default 5% of billing</small></span>
+              <input type="number" id="decorCharge" min="0" step="0.01" value="131250">
+            </label>
+            <label class="field">
+              <span>Miscellaneous</span>
+              <input type="number" id="miscellaneousCost" min="0" step="0.01" value="10000">
+            </label>
+          </div>
+        </section>
+      </form>
+    </section>
+
+    <aside class="summary-panel preview-summary-panel">
+      <p class="eyebrow">Preview Totals</p>
+      <h2>Calculated Summary</h2>
+
+      <div class="preview-total" id="totalBilling">₹0.00</div>
+
+      <div class="preview-metrics">
+        <div class="preview-metric"><span>Billing Before GST</span><strong id="billingBeforeGst">₹0.00</strong></div>
+        <div class="preview-metric"><span>GST 5%</span><strong id="gstAmount">₹0.00</strong></div>
+        <div class="preview-metric"><span>Food Cost Total</span><strong id="foodTotal">₹0.00</strong></div>
+        <div class="preview-metric"><span>Staff Cost Total</span><strong id="staffTotal">₹0.00</strong></div>
+        <div class="preview-metric"><span>Outstation Total</span><strong id="outstationTotal">₹0.00</strong></div>
+        <div class="preview-metric"><span>Total Cost</span><strong id="totalCost">₹0.00</strong></div>
+        <div class="preview-metric preview-metric-emphasis"><span>Profit / Loss</span><strong id="profitLoss">₹0.00</strong></div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="store.js?v=3"></script>
+  <script src="other-pre-cost-preview.js"></script>
+</body>
+</html>

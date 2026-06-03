@@ -1,45 +1,50 @@
 "use strict";
 (function () {
-  var form = document.getElementById("loginForm");
-  var errEl = document.getElementById("loginError");
-  var btn = document.getElementById("loginBtn");
+  // Wait for Firebase SDK
+  function ready(cb) {
+    if (window.ODC_AUTH) return cb();
+    window.addEventListener("load", function () {
+      const check = setInterval(function () {
+        if (window.ODC_AUTH) { clearInterval(check); cb(); }
+      }, 100);
+    });
+  }
 
-  // Already logged in → redirect home
-  fetch("/api/auth/me", { credentials: "same-origin" })
-    .then(function (r) { if (r.ok) window.location.replace("/"); })
-    .catch(function () { /* ignore */ });
+  ready(function () {
+    // Already logged in → go home
+    ODC_AUTH.onAuthStateChanged(function (user) {
+      if (user) window.location.replace("index.html");
+    });
 
-  form.addEventListener("submit", function (e) {
-    e.preventDefault();
-    errEl.hidden = true;
-    btn.disabled = true;
-    btn.textContent = "Signing in…";
+    // Ensure default admin exists on first visit
+    FB.ensureAdminExists().catch(function () {});
 
-    var username = document.getElementById("username").value.trim();
-    var password = document.getElementById("password").value;
+    var form = document.getElementById("loginForm");
+    var errEl = document.getElementById("loginError");
+    var btn   = document.getElementById("loginBtn");
 
-    fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ username: username, password: password })
-    })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-      .then(function (result) {
-        if (result.ok) {
-          window.location.replace("/");
-        } else {
-          errEl.textContent = result.data.error || "Login failed.";
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      errEl.hidden = true;
+      btn.disabled = true;
+      btn.textContent = "Signing in…";
+
+      var username = document.getElementById("username").value.trim().toLowerCase();
+      var password = document.getElementById("password").value;
+      var email    = username + "@odc.local";
+
+      ODC_AUTH.signInWithEmailAndPassword(email, password)
+        .then(function () {
+          window.location.replace("index.html");
+        })
+        .catch(function (err) {
+          var msg = "Invalid username or password.";
+          if (err.code === "auth/too-many-requests") msg = "Too many attempts. Try again later.";
+          errEl.textContent = msg;
           errEl.hidden = false;
           btn.disabled = false;
           btn.textContent = "Sign in";
-        }
-      })
-      .catch(function () {
-        errEl.textContent = "Network error. Please try again.";
-        errEl.hidden = false;
-        btn.disabled = false;
-        btn.textContent = "Sign in";
-      });
+        });
+    });
   });
 }());
