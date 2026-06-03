@@ -71,64 +71,43 @@
   }
 
   function populateHeads(pcHeadIds, payouts) {
-    var sel = document.getElementById("billHead");
+    var sel  = document.getElementById("billHead");
     var hint = document.getElementById("headHint");
-    sel.innerHTML = '<option value="">— Select head —</option>';
+    sel.innerHTML = '<option value="">— Select department head —</option>';
 
     if (pcHeadIds.length > 0) {
-      // Petty cash heads first
-      var grp1 = document.createElement("optgroup");
-      grp1.label = "With Petty Cash Allocation";
+      // Only petty cash heads — no other departments shown
       pcHeadIds.forEach(function (hid) {
         var h = headMap[hid];
         var opt = document.createElement("option");
         opt.value = hid;
         var allocated = (payouts || []).filter(function (p) { return p.headId === hid; }).reduce(function (s, p) { return s + p.amount; }, 0);
-        opt.textContent = (h ? h.name : hid) + " (₹" + allocated.toLocaleString("en-IN") + " allocated)";
-        grp1.appendChild(opt);
+        opt.textContent = (h ? h.name : hid) + "  —  ₹" + allocated.toLocaleString("en-IN") + " allocated";
+        sel.appendChild(opt);
       });
-      sel.appendChild(grp1);
-
-      // Other heads
-      var otherHeads = Object.keys(headMap).filter(function (hid) { return !pcHeadIds.includes(hid); });
-      if (otherHeads.length) {
-        var grp2 = document.createElement("optgroup");
-        grp2.label = "Other Departments";
-        otherHeads.forEach(function (hid) {
-          var opt = document.createElement("option");
-          opt.value = hid;
-          opt.textContent = headMap[hid].name;
-          grp2.appendChild(opt);
-        });
-        sel.appendChild(grp2);
-      }
-
-      // Direct option
-      var direct = document.createElement("option");
-      direct.value = "direct";
-      direct.textContent = "Direct (no department)";
-      sel.appendChild(direct);
-
-      hint.textContent = pcHeadIds.length + " head(s) have petty cash for this event.";
+      hint.textContent = "Only department heads with petty cash for this event are shown.";
     } else {
-      // No petty cash set — show all heads
+      // No petty cash — show all heads as fallback
       Object.keys(headMap).forEach(function (hid) {
         var opt = document.createElement("option");
         opt.value = hid;
         opt.textContent = headMap[hid].name;
         sel.appendChild(opt);
       });
-      var direct = document.createElement("option");
-      direct.value = "direct";
-      direct.textContent = "Direct (no department)";
-      sel.appendChild(direct);
-      hint.textContent = "No petty cash set for this event — showing all departments.";
+      hint.textContent = "No petty cash assigned for this event.";
     }
 
-    // Reset person field
-    document.getElementById("billPerson").style.display = "none";
-    document.getElementById("billPersonText").style.display = "";
-    document.getElementById("billPersonText").value = "";
+    // Reset person field — dropdown visible, text hidden
+    resetPersonField();
+  }
+
+  function resetPersonField() {
+    var personSel  = document.getElementById("billPerson");
+    var personText = document.getElementById("billPersonText");
+    personSel.innerHTML = '<option value="">— Select your name —</option>';
+    personSel.style.display = "";
+    personText.style.display = "none";
+    personText.value = "";
   }
 
   /* ---- On head change: load persons under that head ---- */
@@ -139,19 +118,23 @@
       var personText = document.getElementById("billPersonText");
 
       if (!headId || headId === "direct") {
+        // Direct — free text only
         personSel.style.display = "none";
         personText.style.display = "";
+        personText.placeholder = "Enter your name";
         return;
       }
 
       var head = headMap[headId];
       if (!head || !head.persons || !head.persons.length) {
+        // Head has no persons listed — free text
         personSel.style.display = "none";
         personText.style.display = "";
+        personText.placeholder = "Enter your name";
         return;
       }
 
-      // Show dropdown
+      // Show dropdown from master persons
       personSel.innerHTML = '<option value="">— Select your name —</option>';
       head.persons.forEach(function (p) {
         var pname = typeof p === "string" ? p : (p.name || "");
