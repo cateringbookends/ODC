@@ -23,6 +23,9 @@ __pycache__/
 # Output artifacts
 output/
 
+# Cloudflare tunnel binary (52MB, not needed in repo)
+cloudflared.exe
+
 # Google Sheets sync credentials (contains secret API key)
 google-sync-config.json
 
