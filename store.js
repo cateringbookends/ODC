@@ -16,9 +16,26 @@ window.ODC = (function () {
   let resolveReady;
   const ready = new Promise((res) => { resolveReady = res; });
 
-  // api() — routes to Firebase backend (firebase-backend.js)
-  // Keeps the same call signature so event-store.js / master-data.js work unchanged.
+  // api() — local server fetch when Firebase not configured, Firestore otherwise.
   async function api(method, pathName, body) {
+    // ---- LOCAL SERVER fallback (Firebase not configured) ----
+    if (!window.FIREBASE_READY) {
+      const res = await fetch(pathName, {
+        method,
+        headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        credentials: "same-origin"
+      });
+      if (!res.ok) {
+        let msg = `${res.status}`;
+        try { const j = await res.json(); if (j && j.error) msg = j.error; } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      if (res.status === 204) return null;
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    }
+    // ---- FIREBASE path ----
     if (!window.FB) throw new Error("Firebase backend not loaded");
     const m = method.toUpperCase();
     // Events
