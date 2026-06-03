@@ -15,6 +15,9 @@
         window.ODC_USER = user;
         restore();
         populateNav(user);
+        if (user.role !== "admin") {
+          document.querySelectorAll('a[href="admin.html"]').forEach(function (a) { a.style.display = "none"; });
+        }
       })
       .catch(function () { restore(); });
     return;
@@ -34,6 +37,10 @@
       };
       restore();
       populateNav(window.ODC_USER);
+      // Hide Admin link from non-admins
+      if (window.ODC_USER.role !== "admin") {
+        document.querySelectorAll('a[href="admin.html"]').forEach(function (a) { a.style.display = "none"; });
+      }
     }).catch(function () { restore(); });
   });
 

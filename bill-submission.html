@@ -29,6 +29,7 @@
       <a href="master-persons.html">Master Persons</a>
       <a class="active" href="bill-submission.html">Bill Submission</a>
       <a href="analytics.html">Analytics</a>
+      <a href="admin.html">Admin</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>
@@ -110,46 +111,8 @@
       <div id="billsList"></div>
     </section>
 
-    <section class="panel" id="adminUsersPanel" hidden>
-      <div class="panel-header">
-        <p class="eyebrow">Admin</p>
-        <h2>User Management</h2>
-      </div>
-      <div id="usersList" style="margin-bottom:1.5rem"></div>
-
-      <div class="panel-header" style="margin-top:0.5rem">
-        <h3 style="font-size:1rem;font-weight:600">Add User</h3>
-      </div>
-      <div class="form-body">
-        <div class="cost-grid" style="grid-template-columns:1fr 1fr;gap:14px">
-          <div class="field-group">
-            <label for="newUsername">Username</label>
-            <input type="text" id="newUsername" placeholder="e.g. john">
-          </div>
-          <div class="field-group">
-            <label for="newFullName">Full Name</label>
-            <input type="text" id="newFullName" placeholder="Display name">
-          </div>
-        </div>
-        <div class="cost-grid" style="grid-template-columns:1fr 1fr;gap:14px">
-          <div class="field-group">
-            <label for="newPassword">Password</label>
-            <input type="password" id="newPassword" placeholder="Min 4 characters">
-          </div>
-          <div class="field-group">
-            <label for="newRole">Role</label>
-            <select id="newRole">
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-        </div>
-        <p id="userError" class="bill-form-msg bill-form-error" hidden></p>
-        <p id="userSuccess" class="bill-form-msg bill-form-success" hidden></p>
-        <div class="form-actions" style="margin-top:1rem">
-          <button type="button" class="primary-button" id="addUserBtn">Add User</button>
-        </div>
-      </div>
+    <section class="panel" style="text-align:center;padding:1.5rem" id="adminUsersPanel" hidden>
+      <p style="color:var(--muted);font-size:.85rem">User management moved to <a href="admin.html">Admin page →</a></p>
     </section>
   </main>
 

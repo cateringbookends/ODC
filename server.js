@@ -107,16 +107,13 @@ function ensureMasterPersonColumns() {
 }
 ensureMasterPersonColumns();
 
-function backfillGstInclusiveTotals() {
-  db.prepare("UPDATE events SET total_billing = pax * event_days * cost_per_pax * ?").run(1 + GST_RATE);
-}
-backfillGstInclusiveTotals();
+// backfillGstInclusiveTotals removed — ran every startup, recalculating all rows unnecessarily.
 
 /* ----------------------------------------------------------------------- *
  * Authentication — in-memory sessions, SHA-256 password hashing
  * ----------------------------------------------------------------------- */
 
-const sessions = new Map(); // token -> { userId, username, role, expiresAt }
+const sessions = new Map(); // token -> { userId, username, role, expiresAt, loginAt }
 
 function hashPw(pw) {
   return crypto.createHash("sha256").update(String(pw)).digest("hex");
@@ -136,7 +133,7 @@ function parseCookies(req) {
 
 function createSession(userId, username, role) {
   const token = crypto.randomBytes(32).toString("hex");
-  sessions.set(token, { userId, username, role, expiresAt: Date.now() + SESSION_TTL_MS });
+  sessions.set(token, { userId, username, role, expiresAt: Date.now() + SESSION_TTL_MS, loginAt: Date.now() });
   return token;
 }
 
@@ -779,9 +776,50 @@ async function handleApi(req, res, url) {
     // ================================================================
     if (sub[0] === "audit-log" && m === "GET") {
       if (sess.role !== "admin") return sendJson(res, 403, { error: "Admin only." });
-      const limit = Math.min(Number(url.searchParams.get("limit")) || 200, 2000);
-      const rows = db.prepare("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?").all(limit);
-      return sendJson(res, 200, rows);
+      const limit    = Math.min(Number(url.searchParams.get("limit")) || 500, 5000);
+      const username = url.searchParams.get("user") || null;
+      const action   = url.searchParams.get("action") || null;
+      const from     = url.searchParams.get("from") || null;
+      const to       = url.searchParams.get("to") || null;
+      let sql = "SELECT * FROM audit_log WHERE 1=1";
+      const params = [];
+      if (username) { sql += " AND username = ?"; params.push(username); }
+      if (action)   { sql += " AND action = ?";   params.push(action); }
+      if (from)     { sql += " AND ts >= ?";       params.push(from); }
+      if (to)       { sql += " AND ts <= ?";       params.push(to + "T23:59:59"); }
+      sql += " ORDER BY ts DESC LIMIT ?";
+      params.push(limit);
+      return sendJson(res, 200, db.prepare(sql).all(...params));
+    }
+
+    // ================================================================
+    // ADMIN: Active sessions  GET /api/admin/sessions
+    //                        DELETE /api/admin/sessions/:username
+    // ================================================================
+    if (sub[0] === "admin" && sub[1] === "sessions") {
+      if (sess.role !== "admin") return sendJson(res, 403, { error: "Admin only." });
+      if (m === "GET") {
+        const now    = Date.now();
+        const active = [];
+        for (const [, s] of sessions.entries()) {
+          if (s.expiresAt > now) {
+            active.push({
+              username: s.username, role: s.role,
+              loginAt:   new Date(s.loginAt  || (s.expiresAt - SESSION_TTL_MS)).toISOString(),
+              expiresAt: new Date(s.expiresAt).toISOString()
+            });
+          }
+        }
+        return sendJson(res, 200, active);
+      }
+      if (m === "DELETE" && sub[2]) {
+        const target = decodeURIComponent(sub[2]);
+        for (const [token, s] of sessions.entries()) {
+          if (s.username === target) sessions.delete(token);
+        }
+        auditLog(sess, req, "FORCE_LOGOUT", "session", target, null);
+        return sendJson(res, 200, { ok: true });
+      }
     }
 
     // ================================================================

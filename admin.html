@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Admin - Event Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js?v=5"></script>
+  <script src="firebase-backend.js?v=5"></script>
+  <script src="firebase-auth.js?v=5"></script>
+</head>
+<body>
+  <header class="top-nav">
+    <div class="top-nav-bar">
+      <a class="brand" href="index.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
+    </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="index.html">Sales Intake</a>
+      <a href="saved-events.html">Saved Events</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a href="bill-submission.html">Bill Submission</a>
+      <a href="analytics.html">Analytics</a>
+      <a class="active" href="admin.html">Admin</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell" style="display:block;max-width:1100px;margin:0 auto;padding:24px">
+
+    <div class="panel-header" style="margin-bottom:1.5rem">
+      <p class="eyebrow">Administration</p>
+      <h1>Admin Panel</h1>
+    </div>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:0;border-bottom:2px solid var(--surface-border);margin-bottom:1.5rem">
+      <button class="admin-tab active" data-tab="users"    style="padding:.65rem 1.4rem;font-size:.85rem;font-weight:600;background:none;border:none;border-bottom:2px solid var(--accent);color:var(--accent-dark);cursor:pointer;margin-bottom:-2px">👥 Users</button>
+      <button class="admin-tab"        data-tab="sessions" style="padding:.65rem 1.4rem;font-size:.85rem;font-weight:600;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;margin-bottom:-2px">🟢 Active Sessions</button>
+      <button class="admin-tab"        data-tab="audit"    style="padding:.65rem 1.4rem;font-size:.85rem;font-weight:600;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;margin-bottom:-2px">📋 Activity Log</button>
+    </div>
+
+    <!-- ===== USERS TAB ===== -->
+    <div id="tab-users" class="admin-tab-content">
+      <div class="panel" style="margin-bottom:1.5rem">
+        <div class="panel-header" style="margin-bottom:1rem"><h2>All Users</h2></div>
+        <div id="usersTableWrap" style="overflow-x:auto"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header" style="margin-bottom:1rem"><h2>Add New User</h2></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:600px">
+          <div class="field-group">
+            <label>Username</label>
+            <input type="text" id="newUsername" placeholder="e.g. rahul">
+          </div>
+          <div class="field-group">
+            <label>Full Name</label>
+            <input type="text" id="newFullName" placeholder="Display name">
+          </div>
+          <div class="field-group">
+            <label>Password <span style="color:#dc2626">*</span></label>
+            <input type="password" id="newPassword" placeholder="Min 4 characters">
+          </div>
+          <div class="field-group">
+            <label>Role</label>
+            <select id="newRole">
+              <option value="user">User (Staff)</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+        <p id="userMsg" style="font-size:.83rem;margin-top:.75rem" hidden></p>
+        <div style="margin-top:1rem;display:flex;gap:.75rem">
+          <button class="primary-button" id="addUserBtn">Add User</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SESSIONS TAB ===== -->
+    <div id="tab-sessions" class="admin-tab-content" hidden>
+      <div class="panel">
+        <div class="panel-header" style="margin-bottom:1rem">
+          <h2>Active Sessions</h2>
+          <button class="secondary-button" id="refreshSessions" style="font-size:.78rem;padding:.3rem .8rem">Refresh</button>
+        </div>
+        <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">Users currently logged in (server sessions only — resets on server restart).</p>
+        <div id="sessionsWrap"></div>
+      </div>
+    </div>
+
+    <!-- ===== AUDIT LOG TAB ===== -->
+    <div id="tab-audit" class="admin-tab-content" hidden>
+      <div class="panel" style="margin-bottom:1rem">
+        <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end">
+          <div class="field-group" style="min-width:140px">
+            <label>User</label>
+            <input type="text" id="auditFilterUser" placeholder="all users">
+          </div>
+          <div class="field-group" style="min-width:140px">
+            <label>Action</label>
+            <select id="auditFilterAction">
+              <option value="">All Actions</option>
+              <option value="LOGIN">Login</option>
+              <option value="LOGOUT">Logout</option>
+              <option value="FORCE_LOGOUT">Force Logout</option>
+              <option value="CREATE">Create</option>
+              <option value="UPDATE">Update</option>
+              <option value="DELETE">Delete</option>
+            </select>
+          </div>
+          <div class="field-group" style="min-width:130px">
+            <label>From Date</label>
+            <input type="date" id="auditFilterFrom">
+          </div>
+          <div class="field-group" style="min-width:130px">
+            <label>To Date</label>
+            <input type="date" id="auditFilterTo">
+          </div>
+          <button class="primary-button" id="auditSearch" style="height:40px;margin-top:auto">Search</button>
+          <button class="secondary-button" id="auditClear" style="height:40px;margin-top:auto">Clear</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header" style="margin-bottom:1rem">
+          <h2>Activity Log</h2>
+          <span id="auditCount" style="font-size:.82rem;color:var(--muted)"></span>
+        </div>
+        <div id="auditFeed"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="store.js?v=5"></script>
+  <script src="admin.js?v=5"></script>
+</body>
+</html>
