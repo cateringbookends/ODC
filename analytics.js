@@ -77,7 +77,7 @@
   function renderSummary() {
     var revenue = 0, cost = 0, bills = 0, events = filtered.length;
     for (var ev of filtered) {
-      revenue += ev.totalBilling || 0;
+      revenue += (ev.totalBilling || 0) / 1.05; // pre-GST revenue only
       var pc = allPreCost[ev.id];
       cost += (pc && pc.totalCost) ? pc.totalCost : 0;
       bills += allBills
@@ -90,7 +90,7 @@
 
     var cards = [
       { label: "Events", value: events, color: "#059669", raw: true },
-      { label: "Total Billing", value: fmtN(revenue), color: "#3b82f6" },
+      { label: "Revenue (ex GST)", value: fmtN(revenue), color: "#3b82f6" },
       { label: "Total Cost", value: fmtN(totalCost), color: "#f59e0b" },
       { label: "Gross P&L", value: fmtN(pl), color: pl >= 0 ? "#059669" : "#dc2626" },
       { label: "P&L %", value: fmtPct(plPct), color: plPct >= 0 ? "#059669" : "#dc2626" },
@@ -190,7 +190,7 @@
       }
       if (!key) continue;
       if (!map[key]) map[key] = { label: activeGroup === "month" ? key : key.charAt(0).toUpperCase() + key.slice(1), revenue: 0, cost: 0 };
-      map[key].revenue += ev.totalBilling || 0;
+      map[key].revenue += (ev.totalBilling || 0) / 1.05;
       var pc = allPreCost[ev.id];
       if (pc && pc.totalCost) map[key].cost += pc.totalCost;
       map[key].cost += allBills
@@ -215,11 +215,11 @@
       var cost  = (pc && pc.totalCost) ? pc.totalCost : 0;
       var bills = allBills.filter(function (b) { return b.eventClientId === ev.id && b.status === "approved"; })
                           .reduce(function (s, b) { return s + (b.amount || 0); }, 0);
-      var pl    = (ev.totalBilling || 0) - cost - bills;
+      var pl    = (ev.totalBilling || 0) / 1.05 - cost - bills;
       var plColor = pl >= 0 ? "#059669" : "#dc2626";
       return '<tr onclick="window.location=\'event-dashboard.html?id=' + encodeURIComponent(ev.id) + '\'" style="cursor:pointer" onmouseover="this.style.background=\'var(--surface-soft)\'" onmouseout="this.style.background=\'\'">' +
         td(ev.name) + td(ev.date || "") + td(ev.location) + td(ev.locationZone || "—") + td(ev.pax) +
-        td(fmtN(ev.totalBilling)) + td(cost ? fmtN(cost) : "—") + td(bills ? fmtN(bills) : "—") +
+        td(fmtN(ev.totalBilling / 1.05)) + td(cost ? fmtN(cost) : "—") + td(bills ? fmtN(bills) : "—") +
         '<td style="padding:8px 10px;color:' + plColor + ';font-weight:700">' + fmtN(pl) + '</td>' +
         td(ev.status) + '</tr>';
     }).join("");
@@ -268,7 +268,8 @@
       var cost = (pc && pc.totalCost) ? pc.totalCost : 0;
       var bills = allBills.filter(function (b) { return b.eventClientId === ev.id && b.status === "approved"; })
                           .reduce(function (s, b) { return s + b.amount; }, 0);
-      rows.push([ev.name, ev.date, ev.location, ev.locationZone, ev.pax, ev.totalBilling, cost, bills, (ev.totalBilling - cost - bills), ev.status]);
+      var baseRev = ev.totalBilling / 1.05;
+      rows.push([ev.name, ev.date, ev.location, ev.locationZone, ev.pax, Math.round(baseRev), cost, bills, Math.round(baseRev - cost - bills), ev.status]);
     }
     var csv = rows.map(function (r) { return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(","); }).join("\n");
     var a = document.createElement("a");

@@ -33,8 +33,9 @@
     var pendingBills  = bills.filter(function (b) { return b.status === "pending";  }).reduce(function (s, b) { return s + b.amount; }, 0);
     var preCostTotal  = preCost ? (preCost.totalCost || 0) : 0;
     var totalPayout   = (pc.payouts || []).reduce(function (s, r) { return s + r.amount; }, 0);
-    var estPL = ev.totalBilling - preCostTotal;
-    var actPL = ev.totalBilling - preCostTotal - approvedBills;
+    var baseRevenue = ev.totalBilling / 1.05; // strip GST — planning uses pre-GST revenue
+    var estPL = baseRevenue - preCostTotal;
+    var actPL = baseRevenue - preCostTotal - approvedBills;
     var plColor = function (v) { return v >= 0 ? "#059669" : "#dc2626"; };
 
     main.innerHTML = [
@@ -53,6 +54,7 @@
       // P&L Summary cards
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem">',
         card("Total Billing", fmtN(ev.totalBilling), "#3b82f6"),
+        card("Revenue (ex GST)", fmtN(baseRevenue), "#0ea5e9"),
         card("Pre-Cost",      preCostTotal ? fmtN(preCostTotal) : "Not planned", "#f59e0b"),
         card("Est. P&L",      fmtN(estPL), plColor(estPL)),
         card("Approved Bills",fmtN(approvedBills), "#8b5cf6"),

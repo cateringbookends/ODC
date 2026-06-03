@@ -121,7 +121,7 @@ function updatePlanningContext() {
 function updateCostTotals() {
   const pax = selectedEvent?.pax || 0;
   const days = selectedEvent?.days || 0;
-  const totalBilling = selectedEvent?.totalBilling || 0;
+  const totalBilling = (selectedEvent?.totalBilling || 0) / 1.05; // pre-GST revenue for P&L planning
   const rawZone = String(selectedEvent?.locationZone || "").trim();
   const zone = rawZone.toLowerCase();
   const isFixedZone = zone === "surat" || zone === "ahmedabad";
@@ -180,7 +180,7 @@ function collectPreCost() {
     staffFoodCost: readNumber(staffFoodCost),
     refervanCharge: readNumber(refervanCharge),
     equipmentTransportationCharge: readNumber(equipmentTransportationCharge),
-    totalCost: (selectedEvent?.totalBilling || 0) - Number.parseFloat(profitLoss.value.replace(/[^0-9.-]/g, "")) || 0,
+    totalCost: (selectedEvent?.totalBilling || 0) / 1.05 - Number.parseFloat(profitLoss.value.replace(/[^0-9.-]/g, "")) || 0,
     profitLoss: Number.parseFloat(profitLoss.value.replace(/[^0-9.-]/g, "")) || 0
   };
 }
