@@ -1,0 +1,8 @@
+node_modules
+odc.db
+google-sync-config.json
+verify-ui.js
+verify-screenshots/
+.git
+*.log
+.env

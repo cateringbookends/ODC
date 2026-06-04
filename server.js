@@ -151,7 +151,39 @@ ensureEventFieldLog();
  * Authentication — in-memory sessions, SHA-256 password hashing
  * ----------------------------------------------------------------------- */
 
-const sessions = new Map(); // token -> { userId, username, role, expiresAt, loginAt }
+// Sessions stored in SQLite so they survive server restarts (Fly.io machine sleep/wake).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL,
+    username   TEXT NOT NULL,
+    role       TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    login_at   INTEGER NOT NULL
+  );
+`);
+// Purge expired sessions on startup.
+db.exec(`DELETE FROM sessions WHERE expires_at <= ${Date.now()}`);
+
+// Thin compatibility shim so the rest of the code reads like a Map.
+const sessions = {
+  set(token, s) {
+    db.prepare("INSERT OR REPLACE INTO sessions (token,user_id,username,role,expires_at,login_at) VALUES (?,?,?,?,?,?)")
+      .run(token, s.userId, s.username, s.role, s.expiresAt, s.loginAt);
+  },
+  get(token) {
+    const row = db.prepare("SELECT * FROM sessions WHERE token = ?").get(token);
+    if (!row) return undefined;
+    return { userId: row.user_id, username: row.username, role: row.role, expiresAt: row.expires_at, loginAt: row.login_at };
+  },
+  delete(token) { db.prepare("DELETE FROM sessions WHERE token = ?").run(token); },
+  entries() {
+    return db.prepare("SELECT * FROM sessions").all().map(row => [
+      row.token,
+      { userId: row.user_id, username: row.username, role: row.role, expiresAt: row.expires_at, loginAt: row.login_at }
+    ]);
+  }
+};
 
 function hashPw(pw) {
   const salt = crypto.randomBytes(16).toString("hex");
