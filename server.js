@@ -876,9 +876,12 @@ const LIVERELOAD_JS =
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png", ".sql": "text/plain; charset=utf-8", ".md": "text/plain; charset=utf-8" };
 
+// Added to every response so ngrok skips its browser-warning interstitial.
+const NGROK_HDR = { "ngrok-skip-browser-warning": "true" };
+
 function sendJson(res, status, obj) {
   const body = JSON.stringify(obj);
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body) });
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body), ...NGROK_HDR });
   res.end(body);
 }
 
@@ -1236,7 +1239,7 @@ function serveStatic(req, res, url) {
   fs.stat(filePath, (err, stat) => {
     if (err || !stat.isFile()) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("Not found"); }
     const ext = path.extname(filePath).toLowerCase();
-    const headers = { "Content-Type": MIME[ext] || "application/octet-stream" };
+    const headers = { "Content-Type": MIME[ext] || "application/octet-stream", ...NGROK_HDR };
     if (ext === ".html") {
       fs.readFile(filePath, "utf8", (readErr, html) => {
         if (readErr) { res.writeHead(500, { "Content-Type": "text/plain" }); return res.end("Read error"); }
