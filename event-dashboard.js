@@ -218,10 +218,14 @@
   var ACTION_BADGE  = { create: ["#059669","#f0fdf4","Created"], update: ["#3b82f6","#eff6ff","Updated"], petty_cash: ["#8b5cf6","#f5f3ff","Petty Cash"], pre_cost: ["#f59e0b","#fffbeb","Pre-Cost"], delete: ["#dc2626","#fef2f2","Deleted"] };
 
   function renderChangeLog(log) {
+    var evId = getEventId();
     var header = '<div class="panel" style="margin-top:1.5rem">' +
       '<div class="panel-header" style="margin-bottom:1rem">' +
         '<h2>Change History</h2>' +
-        '<span style="font-size:.78rem;color:var(--muted)">' + (log.length) + ' entries</span>' +
+        '<div style="display:flex;align-items:center;gap:1rem">' +
+          '<span style="font-size:.78rem;color:var(--muted)">' + (log.length) + ' entries</span>' +
+          '<a href="event-log.html?id=' + encodeURIComponent(evId) + '" style="font-size:.78rem;color:var(--accent)" target="_blank">Open Full Log ↗</a>' +
+        '</div>' +
       '</div>';
 
     if (!log || !log.length) {

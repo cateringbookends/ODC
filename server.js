@@ -953,6 +953,22 @@ async function handleApi(req, res, url) {
     }
 
     // ================================================================
+    // PUBLIC READ-ONLY: event log + event header (no session needed)
+    // ================================================================
+    if (sub[0] === "events" && sub.length === 3 && sub[2] === "log" && m === "GET") {
+      const id = decodeURIComponent(sub[1]);
+      return sendJson(res, 200, db.prepare(
+        "SELECT id,event_client_id,event_name,username,action,section,field,old_value,new_value,ip_address,user_agent,ts FROM event_field_log WHERE event_client_id = ? ORDER BY ts DESC LIMIT 500"
+      ).all(id));
+    }
+    if (sub[0] === "events" && sub.length === 3 && sub[2] === "header" && m === "GET") {
+      const id = decodeURIComponent(sub[1]);
+      const row = findEventRow(id);
+      if (!row) return sendJson(res, 404, { error: "Not found" });
+      return sendJson(res, 200, { id: row.client_id, name: row.event_name, date: row.event_date, location: row.location, status: row.status, locationZone: row.location_zone || "", pax: row.pax, days: row.event_days });
+    }
+
+    // ================================================================
     // ALL OTHER ROUTES REQUIRE A VALID SESSION
     // ================================================================
     const sess = sessionFromReq(req);
