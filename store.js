@@ -41,6 +41,10 @@ window.ODC = (function () {
     // Events
     if (pathName === "/api/events" && m === "GET")  return FB.getAllEvents();
     if (pathName === "/api/events" && m === "POST") return FB.upsertEvent(body);
+    if (pathName.match(/^\/api\/events\/([^/]+)$/) && m === "GET") {
+      const id = decodeURIComponent(pathName.split("/")[3]);
+      return FB.getEventById ? FB.getEventById(id) : FB.getAllEvents().then((evs) => (evs || []).find((e) => e.id === id) || null);
+    }
     if (pathName.match(/^\/api\/events\/([^/]+)$/) && m === "DELETE") {
       const id = decodeURIComponent(pathName.split("/")[3]);
       return FB.deleteEvent(id);

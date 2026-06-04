@@ -12,6 +12,10 @@ const PORT = Number(process.env.PORT) || 5050;
 const DB_PATH = process.env.DB_PATH || path.join(ROOT, "odc.db");
 const GST_RATE = 0.05;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+const SCRYPT_N   = 16384;
+const SCRYPT_R   = 8;
+const SCRYPT_P   = 1;
+const SCRYPT_LEN = 64;
 
 /* ----------------------------------------------------------------------- *
  * Database
@@ -116,7 +120,23 @@ ensureMasterPersonColumns();
 const sessions = new Map(); // token -> { userId, username, role, expiresAt, loginAt }
 
 function hashPw(pw) {
-  return crypto.createHash("sha256").update(String(pw)).digest("hex");
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(String(pw), salt, SCRYPT_LEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }).toString("hex");
+  return `scrypt:${salt}:${hash}`;
+}
+
+function verifyPw(pw, stored) {
+  if (!stored || !stored.startsWith("scrypt:")) {
+    // Legacy SHA-256 — verify, then caller will migrate the hash.
+    return crypto.createHash("sha256").update(String(pw)).digest("hex") === stored;
+  }
+  const parts = stored.split(":");
+  if (parts.length !== 3) return false;
+  const [, salt, hash] = parts;
+  const candidate = crypto.scryptSync(String(pw), salt, SCRYPT_LEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }).toString("hex");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(candidate, "hex"), Buffer.from(hash, "hex"));
+  } catch { return false; }
 }
 
 function parseCookies(req) {
@@ -145,6 +165,33 @@ function getSession(token) {
 }
 
 function deleteSession(token) { sessions.delete(token); }
+
+/* ----------------------------------------------------------------------- *
+ * Login rate limiter — in-memory, per source IP
+ * ----------------------------------------------------------------------- */
+const loginAttempts = new Map(); // ip -> { count, firstAt, lockedUntil }
+const LOGIN_MAX       = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15-minute sliding window
+const LOGIN_LOCK_MS   = 30 * 60 * 1000; // 30-minute lockout after too many failures
+
+function checkLoginRate(ip) {
+  const now = Date.now();
+  const e = loginAttempts.get(ip) || { count: 0, firstAt: now, lockedUntil: 0 };
+  if (e.lockedUntil > now) return false;
+  if (now - e.firstAt > LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, firstAt: now, lockedUntil: 0 });
+    return true;
+  }
+  e.count++;
+  if (e.count > LOGIN_MAX) {
+    e.lockedUntil = now + LOGIN_LOCK_MS;
+    loginAttempts.set(ip, e);
+    return false;
+  }
+  loginAttempts.set(ip, e);
+  return true;
+}
+function resetLoginRate(ip) { loginAttempts.delete(ip); }
 
 function sessionFromReq(req) {
   const token = parseCookies(req).odc_session;
@@ -684,8 +731,17 @@ async function handleApi(req, res, url) {
       const body = await readBody(req);
       const username = String(body?.username || "").trim().toLowerCase();
       const user = getUser(username);
-      if (!user || user.password_hash !== hashPw(body?.password || "")) {
+      const ip = req.socket.remoteAddress || req.headers["x-forwarded-for"] || "unknown";
+      if (!checkLoginRate(ip)) {
+        return sendJson(res, 429, { error: "Too many login attempts. Try again in 30 minutes." });
+      }
+      if (!user || !verifyPw(body?.password || "", user.password_hash)) {
         return sendJson(res, 401, { error: "Invalid username or password." });
+      }
+      resetLoginRate(ip);
+      // Migrate legacy SHA-256 hash to scrypt on first successful login.
+      if (user.password_hash && !user.password_hash.startsWith("scrypt:")) {
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPw(body.password || ""), user.id);
       }
       const token = createSession(user.id, user.username, user.role);
       auditLogLogin(user.username, user.id, req, "LOGIN");
@@ -872,6 +928,10 @@ async function handleApi(req, res, url) {
     if (sub[0] === "events" && sub.length >= 2) {
       const id = decodeURIComponent(sub[1]);
       if (sub.length === 2) {
+        if (m === "GET") {
+          const row = findEventRow(id);
+          return row ? sendJson(res, 200, mapEventRow(row)) : sendJson(res, 404, { error: "Not found" });
+        }
         if (m === "DELETE") {
           const ok = deleteEvent(id);
           if (ok) {
@@ -948,13 +1008,16 @@ function serveStatic(req, res, url) {
     const ext = path.extname(filePath).toLowerCase();
     const headers = { "Content-Type": MIME[ext] || "application/octet-stream" };
     if (ext === ".html") {
-      let html = fs.readFileSync(filePath, "utf8");
-      const tag = '<script src="/__livereload.js"></script>';
-      html = html.includes("</body>") ? html.replace("</body>", `  ${tag}\n</body>`) : html + tag;
-      headers["Content-Length"] = Buffer.byteLength(html);
-      headers["Cache-Control"] = "no-cache";
-      res.writeHead(200, headers);
-      return res.end(html);
+      fs.readFile(filePath, "utf8", (readErr, html) => {
+        if (readErr) { res.writeHead(500, { "Content-Type": "text/plain" }); return res.end("Read error"); }
+        const tag = '<script src="/__livereload.js"></script>';
+        html = html.includes("</body>") ? html.replace("</body>", `  ${tag}\n</body>`) : html + tag;
+        headers["Content-Length"] = Buffer.byteLength(html);
+        headers["Cache-Control"] = "no-cache";
+        res.writeHead(200, headers);
+        res.end(html);
+      });
+      return;
     }
     headers["Cache-Control"] = "no-cache";
     res.writeHead(200, headers);

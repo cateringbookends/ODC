@@ -13,7 +13,7 @@
     if (!id) { document.getElementById("loadingState").textContent = "No event ID in URL."; return; }
 
     var [ev, pettyCash, preCost, bills, heads] = await Promise.all([
-      ODC.api("GET", "/api/events").then(function (evs) { return (evs || []).find(function (e) { return e.id === id; }); }),
+      ODC.api("GET", "/api/events/" + encodeURIComponent(id)).catch(function () { return null; }),
       ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/petty-cash").catch(function () { return { payouts: [], petty: [] }; }),
       ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/pre-cost").catch(function () { return null; }),
       ODC.api("GET", "/api/bills").then(function (b) { return (b || []).filter(function (x) { return x.eventClientId === id; }); }),

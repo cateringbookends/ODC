@@ -31,6 +31,8 @@ let decorChargeTouched = false;
 let staffCostTouched = false;
 let staffFoodCostTouched = false;
 let saveStatusEl = null;
+let lastComputedTotalCost = 0;
+let lastComputedProfitLoss = 0;
 
 const DEFAULTS = window.ODC_DATA?.defaults || { decorRate: 0.05, staffCostPerDay: 1000 };
 
@@ -160,6 +162,8 @@ function updateCostTotals() {
     outstationTotal;
   const profitLossAmount = totalBilling - totalCost;
 
+  lastComputedTotalCost = totalCost;
+  lastComputedProfitLoss = profitLossAmount;
   totalFoodCost.value = moneyFormatter.format(foodTotal);
   totalPlanningCost.value = moneyFormatter.format(totalCost);
   profitLoss.value = moneyFormatter.format(profitLossAmount);
@@ -180,8 +184,8 @@ function collectPreCost() {
     staffFoodCost: readNumber(staffFoodCost),
     refervanCharge: readNumber(refervanCharge),
     equipmentTransportationCharge: readNumber(equipmentTransportationCharge),
-    totalCost: (selectedEvent?.totalBilling || 0) / 1.05 - Number.parseFloat(profitLoss.value.replace(/[^0-9.-]/g, "")) || 0,
-    profitLoss: Number.parseFloat(profitLoss.value.replace(/[^0-9.-]/g, "")) || 0
+    totalCost: lastComputedTotalCost,
+    profitLoss: lastComputedProfitLoss
   };
 }
 

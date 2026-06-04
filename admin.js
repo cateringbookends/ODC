@@ -13,6 +13,8 @@
     }, 100);
   }
 
+  var past = new Date(); past.setDate(past.getDate() - 30);
+
   waitForUser(function () {
     if (window.ODC_USER.role !== "admin") {
       document.querySelector("main").innerHTML = "<div class='panel' style='padding:2rem;text-align:center'><h2>Admin Only</h2><p style='color:var(--muted);margin-top:.5rem'>You do not have permission to view this page.</p></div>";
@@ -308,6 +310,4 @@
   /* ---- helpers ---- */
   var cellS = "padding:10px 12px;border-bottom:1px solid var(--surface-border);font-size:.84rem;";
   function th(t) { return '<th style="text-align:left;padding:8px 12px;font-size:.78rem;font-weight:600;color:var(--muted);border-bottom:2px solid var(--surface-border)">' + t + '</th>'; }
-
-  var past = new Date(); past.setDate(past.getDate() - 30);
 }());

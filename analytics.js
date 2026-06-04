@@ -35,12 +35,12 @@
       allBills  = await ODC.api("GET", "/api/bills") || [];
       heads     = (await ODC.api("GET", "/api/master-persons")) || [];
 
-      // Pre-cost per event
-      for (var ev of allEvents) {
+      // Pre-cost per event — fetched in parallel
+      await Promise.all(allEvents.map(async function (ev) {
         try {
           allPreCost[ev.id] = await ODC.api("GET", "/api/events/" + encodeURIComponent(ev.id) + "/pre-cost");
         } catch { allPreCost[ev.id] = null; }
-      }
+      }));
     } catch (e) {
       console.error("Analytics data load:", e);
     }
@@ -217,7 +217,7 @@
                           .reduce(function (s, b) { return s + (b.amount || 0); }, 0);
       var pl    = (ev.totalBilling || 0) / 1.05 - cost - bills;
       var plColor = pl >= 0 ? "#059669" : "#dc2626";
-      return '<tr onclick="window.location=\'event-dashboard.html?id=' + encodeURIComponent(ev.id) + '\'" style="cursor:pointer" onmouseover="this.style.background=\'var(--surface-soft)\'" onmouseout="this.style.background=\'\'">' +
+      return '<tr data-event-id="' + encodeURIComponent(ev.id) + '" class="clickable-row" style="cursor:pointer">' +
         td(ev.name) + td(ev.date || "") + td(ev.location) + td(ev.locationZone || "—") + td(ev.pax) +
         td(fmtN(ev.totalBilling / 1.05)) + td(cost ? fmtN(cost) : "—") + td(bills ? fmtN(bills) : "—") +
         '<td style="padding:8px 10px;color:' + plColor + ';font-weight:700">' + fmtN(pl) + '</td>' +
@@ -241,6 +241,19 @@
   /* ---- Events ---- */
   function bindEvents() {
     document.getElementById("applyFilters").addEventListener("click", applyFilters);
+    var detailBody = document.getElementById("detailBody");
+    detailBody.addEventListener("click", function (e) {
+      var row = e.target.closest("tr[data-event-id]");
+      if (row) window.location.href = "event-dashboard.html?id=" + row.dataset.eventId;
+    });
+    detailBody.addEventListener("mouseover", function (e) {
+      var row = e.target.closest("tr[data-event-id]");
+      if (row) row.style.background = "var(--surface-soft)";
+    });
+    detailBody.addEventListener("mouseout", function (e) {
+      var row = e.target.closest("tr[data-event-id]");
+      if (row) row.style.background = "";
+    });
     document.getElementById("resetFilters").addEventListener("click", function () {
       setDefaultDates();
       document.getElementById("filterZone").value = "";

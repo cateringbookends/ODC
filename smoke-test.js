@@ -5,6 +5,8 @@ const BASE = `http://localhost:${process.env.PORT || 5050}`;
 
 let pass = 0;
 let fail = 0;
+let sessionCookie = "";
+
 function check(name, cond, extra) {
   if (cond) { pass++; console.log(`  ok  - ${name}`); }
   else { fail++; console.error(`  FAIL- ${name}${extra ? "  :: " + extra : ""}`); }
@@ -12,7 +14,10 @@ function check(name, cond, extra) {
 async function api(method, path, body) {
   const res = await fetch(BASE + path, {
     method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(sessionCookie ? { Cookie: sessionCookie } : {})
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined
   });
   let json = null;
@@ -22,6 +27,22 @@ async function api(method, path, body) {
 
 (async () => {
   console.log(`Smoke testing ${BASE}`);
+
+  // 0. Authenticate — all other endpoints require a session.
+  const loginRes = await fetch(BASE + "/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "aiops", password: "AIops" })
+  });
+  const setCookie = loginRes.headers.get("set-cookie");
+  if (!loginRes.ok || !setCookie) { console.error("Login failed — is the server running with default admin?"); process.exit(1); }
+  sessionCookie = setCookie.split(";")[0];
+  check("Login succeeds (aiops/AIops)", loginRes.ok, null);
+
+  // Verify protected endpoint requires auth (no session = 401)
+  const noAuthRes = await fetch(BASE + "/api/events");
+  check("Unauthenticated GET /api/events -> 401", noAuthRes.status === 401, String(noAuthRes.status));
+
   const originalMasters = (await api("GET", "/api/master-persons")).json;
 
   // 1. events endpoint is reachable and can start empty after a full cleanup
