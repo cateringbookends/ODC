@@ -199,3 +199,36 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
 CREATE INDEX IF NOT EXISTS idx_bill_submissions_event ON bill_submissions(event_id);
 CREATE INDEX IF NOT EXISTS idx_bill_submissions_status ON bill_submissions(status);
 CREATE INDEX IF NOT EXISTS idx_bill_submissions_user ON bill_submissions(submitted_by_user_id);
+
+-- Field-level change log: every value that was set or changed, by whom, when, from where.
+CREATE TABLE IF NOT EXISTS event_field_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_client_id TEXT NOT NULL,
+  event_name    TEXT,
+  username      TEXT NOT NULL,
+  action        TEXT NOT NULL CHECK (action IN ('create','update','petty_cash','pre_cost','delete')),
+  section       TEXT NOT NULL,   -- 'core' | 'kyc' | 'payment_schedule' | 'petty_cash' | 'pre_cost'
+  field         TEXT,            -- human-readable field label; NULL for section-level entries
+  old_value     TEXT,
+  new_value     TEXT,
+  ip_address    TEXT,
+  user_agent    TEXT,
+  ts            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Payment cycle received tracking
+CREATE TABLE IF NOT EXISTS payment_received (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id      INTEGER NOT NULL,
+  cycle_index   INTEGER NOT NULL,
+  cycle_name    TEXT,
+  amount        REAL NOT NULL DEFAULT 0,
+  received_by   TEXT NOT NULL,
+  received_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  notes         TEXT,
+  FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_field_log_client ON event_field_log(event_client_id);
+CREATE INDEX IF NOT EXISTS idx_event_field_log_ts     ON event_field_log(ts);
+CREATE INDEX IF NOT EXISTS idx_payment_received_event ON payment_received(event_id);

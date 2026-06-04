@@ -111,6 +111,40 @@ function ensureMasterPersonColumns() {
 }
 ensureMasterPersonColumns();
 
+function ensureEventFieldLog() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS event_field_log (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_client_id TEXT NOT NULL,
+      event_name      TEXT,
+      username        TEXT NOT NULL,
+      action          TEXT NOT NULL,
+      section         TEXT NOT NULL,
+      field           TEXT,
+      old_value       TEXT,
+      new_value       TEXT,
+      ip_address      TEXT,
+      user_agent      TEXT,
+      ts              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS payment_received (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id    INTEGER NOT NULL,
+      cycle_index INTEGER NOT NULL,
+      cycle_name  TEXT,
+      amount      REAL NOT NULL DEFAULT 0,
+      received_by TEXT NOT NULL,
+      received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      notes       TEXT,
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_field_log_client ON event_field_log(event_client_id);
+    CREATE INDEX IF NOT EXISTS idx_event_field_log_ts     ON event_field_log(ts);
+    CREATE INDEX IF NOT EXISTS idx_payment_received_event ON payment_received(event_id);
+  `);
+}
+ensureEventFieldLog();
+
 // backfillGstInclusiveTotals removed — ran every startup, recalculating all rows unnecessarily.
 
 /* ----------------------------------------------------------------------- *
@@ -420,10 +454,117 @@ function validateEvent(e) {
 }
 
 /* ----------------------------------------------------------------------- *
+ * Event field-level change logging
+ * ----------------------------------------------------------------------- */
+
+const CORE_FIELDS = [
+  { key: "name",          col: "event_name",     label: "Event Name" },
+  { key: "date",          col: "event_date",      label: "Event Date" },
+  { key: "entryDate",     col: "entry_date",      label: "Entry Date" },
+  { key: "location",      col: "location",        label: "Location" },
+  { key: "locationZone",  col: "location_zone",   label: "Zone / City" },
+  { key: "pax",           col: "pax",             label: "PAX" },
+  { key: "days",          col: "event_days",      label: "No. of Days" },
+  { key: "costPerPax",    col: "cost_per_pax",    label: "Cost per PAX" },
+  { key: "status",        col: "status",          label: "Status" },
+  { key: "time",          col: "event_time",      label: "Event Time" },
+  { key: "foodType",      col: "food_type",       label: "Food Type" },
+  { key: "allergicCount", col: "allergic_count",  label: "Allergic Count" },
+  { key: "allergicNotes", col: "allergic_notes",  label: "Allergy Notes" }
+];
+
+const KYC_FIELDS = [
+  { col: "client_name",   key: "name",    label: "KYC: Client Name" },
+  { col: "mobile",        key: "mobile",  label: "KYC: Mobile" },
+  { col: "email",         key: "email",   label: "KYC: Email" },
+  { col: "gst_number",    key: "gst",     label: "KYC: GST" },
+  { col: "pan_number",    key: "pan",     label: "KYC: PAN" },
+  { col: "aadhar_number", key: "aadhar",  label: "KYC: Aadhaar" }
+];
+
+function logFieldChange(insStmt, clientId, eventName, username, action, section, field, oldVal, newVal, ip, ua) {
+  const o = String(oldVal == null ? "" : oldVal);
+  const n = String(newVal == null ? "" : newVal);
+  if (o === n) return; // no change
+  try {
+    insStmt.run(clientId, eventName || "", username, action, section, field, o || null, n || null, ip, ua);
+  } catch (e) { console.warn("field log write failed:", e.message); }
+}
+
+function writeFieldLog(clientId, eventName, existingRow, e, cycles, kyc, sess, req) {
+  const ip = req ? (req.socket.remoteAddress || req.headers["x-forwarded-for"] || null) : null;
+  const ua = req ? ((req.headers["user-agent"] || "").slice(0, 200) || null) : null;
+  const username = sess ? sess.username : "system";
+  const isCreate = !existingRow;
+  const action = isCreate ? "create" : "update";
+
+  const ins = db.prepare(
+    "INSERT INTO event_field_log (event_client_id,event_name,username,action,section,field,old_value,new_value,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?,?,?)"
+  );
+
+  // ── Core fields ──────────────────────────────────────────────────────────
+  for (const f of CORE_FIELDS) {
+    const oldVal = isCreate ? null : (existingRow[f.col] == null ? "" : String(existingRow[f.col]));
+    // Get new value from the normalized form
+    let newVal;
+    if (f.key === "name")          newVal = String(e.name || "").trim();
+    else if (f.key === "date")     newVal = String(e.date || "");
+    else if (f.key === "entryDate") newVal = String(e.entryDate || "");
+    else if (f.key === "location") newVal = String(e.location || "").trim();
+    else if (f.key === "locationZone") newVal = String(e.locationZone || "").trim();
+    else if (f.key === "pax")      newVal = String(Math.floor(Number(e.pax)) || 0);
+    else if (f.key === "days")     newVal = String(Number(e.days) > 0 ? Math.floor(Number(e.days)) : 1);
+    else if (f.key === "costPerPax") newVal = String(Number(e.costPerPax) || 0);
+    else if (f.key === "status")   newVal = String(e.status || "open");
+    else if (f.key === "time")     newVal = String(e.time || "").trim();
+    else if (f.key === "foodType") newVal = String(e.foodType || "").trim();
+    else if (f.key === "allergicCount") newVal = String(Math.max(Math.floor(Number(e.allergicCount) || 0), 0));
+    else if (f.key === "allergicNotes") newVal = String(e.allergicNotes || "").trim();
+    else newVal = "";
+
+    if (isCreate) {
+      if (newVal !== "" && newVal !== "0") logFieldChange(ins, clientId, e.name, username, action, "core", f.label, null, newVal, ip, ua);
+    } else {
+      logFieldChange(ins, clientId, e.name, username, action, "core", f.label, oldVal, newVal, ip, ua);
+    }
+  }
+
+  // ── KYC fields ───────────────────────────────────────────────────────────
+  const newKyc = e.invoiceKyc || {};
+  for (const f of KYC_FIELDS) {
+    const oldVal = isCreate ? null : (kyc ? (kyc[f.col] || "") : "");
+    const newVal = String(newKyc[f.key] || "").trim();
+    if (isCreate) {
+      if (newVal) logFieldChange(ins, clientId, e.name, username, action, "kyc", f.label, null, newVal, ip, ua);
+    } else {
+      logFieldChange(ins, clientId, e.name, username, action, "kyc", f.label, oldVal, newVal, ip, ua);
+    }
+  }
+
+  // ── Payment schedule ─────────────────────────────────────────────────────
+  const newCycles = Array.isArray(e.paymentSchedule) ? e.paymentSchedule : [];
+  if (isCreate) {
+    if (newCycles.length) {
+      ins.run(clientId, e.name || "", username, action, "payment_schedule", "Payment Schedule",
+        null, `${newCycles.length} cycle(s): ${newCycles.map(c => `${c.label} ₹${c.amount}`).join(", ")}`, ip, ua);
+    }
+  } else {
+    const oldSummary = cycles.map(c => `${c.cycle_name}:${c.amount}:${c.billing_type}`).join("|");
+    const newSummary = newCycles.map(c => `${c.label}:${c.amount}:${c.billing}`).join("|");
+    if (oldSummary !== newSummary) {
+      ins.run(clientId, e.name || "", username, "update", "payment_schedule", "Payment Schedule",
+        cycles.map(c => `${c.cycle_name} ₹${c.amount} (${c.billing_type})`).join(", ") || "—",
+        newCycles.map(c => `${c.label} ₹${c.amount} (${c.billing})`).join(", ") || "—",
+        ip, ua);
+    }
+  }
+}
+
+/* ----------------------------------------------------------------------- *
  * Event write (upsert by client_id, transactional)
  * ----------------------------------------------------------------------- */
 
-function upsertEvent(e) {
+function upsertEvent(e, sess, req) {
   const errors = validateEvent(e);
   if (errors.length) {
     const err = new Error(errors.join(" "));
@@ -448,6 +589,11 @@ function upsertEvent(e) {
   try {
     const existing = findEventRow(clientId);
     let eventId;
+
+    // Snapshot old cycles + KYC before we delete them (needed for diff)
+    const oldCycles = existing ? db.prepare("SELECT * FROM payment_cycles WHERE event_id = ? ORDER BY id").all(existing.id) : [];
+    const oldKyc    = existing ? db.prepare("SELECT * FROM invoice_kyc WHERE event_id = ?").get(existing.id) : null;
+
     if (existing) {
       db.prepare(
         `UPDATE events SET external_id=?, entry_date=?, event_date=?, event_name=?, location=?, pax=?, event_days=?, cost_per_pax=?, total_billing=?, status=?, event_time=?, food_type=?, allergic_count=?, allergic_notes=?, location_zone=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
@@ -482,6 +628,9 @@ function upsertEvent(e) {
          VALUES (?,?,?,?,?,?,?)`
       ).run(eventId, String(k.name || "").trim(), String(k.mobile || "").trim(), String(k.email || "").trim(), String(k.gst || "").trim().toUpperCase(), String(k.pan || "").trim().toUpperCase(), String(k.aadhar || "").trim());
     }
+
+    // Write field-level change log (inside transaction so it rolls back on error)
+    writeFieldLog(clientId, e.name || "", existing, e, oldCycles, oldKyc, sess, req);
 
     db.exec("COMMIT");
     return mapEventRow(findEventRow(clientId));
@@ -913,7 +1062,7 @@ async function handleApi(req, res, url) {
       if (m === "POST") {
         const body = await readBody(req) || {};
         const existed = body.id ? !!findEventRow(String(body.id)) : false;
-        const result = upsertEvent(body);
+        const result = upsertEvent(body, sess, req);
         auditLog(sess, req, existed ? "UPDATE" : "CREATE", "event", result.id, null);
         if (gSync.isEnabled()) {
           const evs = getAllEvents();
@@ -951,6 +1100,15 @@ async function handleApi(req, res, url) {
         if (m === "PUT") {
           const result = writePettyCash(id, (await readBody(req)) || {});
           auditLog(sess, req, "UPDATE", "petty-cash", id, null);
+          // Log petty cash save to field log
+          const evRow = findEventRow(id);
+          if (evRow) {
+            const ip = req.socket.remoteAddress || req.headers["x-forwarded-for"] || null;
+            const data = result;
+            const summary = `${(data.payouts||[]).length} payout(s), ${(data.petty||[]).length} expense(s), total ₹${[...(data.payouts||[]),...(data.petty||[])].reduce((s,r)=>s+(r.amount||0),0)}`;
+            db.prepare("INSERT INTO event_field_log (event_client_id,event_name,username,action,section,field,old_value,new_value,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?,?,?)")
+              .run(id, evRow.event_name, sess.username, "petty_cash", "petty_cash", "Petty Cash Saved", null, summary, ip, (req.headers["user-agent"]||"").slice(0,200));
+          }
           if (gSync.isEnabled()) {
             const evs = getAllEvents();
             gSync.syncPettyCash(evs.map((ev) => ({ eventId: ev.id, eventName: ev.name, data: readPettyCash(ev.id) })));
@@ -963,11 +1121,51 @@ async function handleApi(req, res, url) {
         if (m === "PUT") {
           const result = writePreCost(id, (await readBody(req)) || {});
           auditLog(sess, req, "UPDATE", "pre-cost", id, null);
+          // Log pre-cost save to field log
+          const evRow = findEventRow(id);
+          if (evRow) {
+            const ip = req.socket.remoteAddress || req.headers["x-forwarded-for"] || null;
+            db.prepare("INSERT INTO event_field_log (event_client_id,event_name,username,action,section,field,old_value,new_value,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?,?,?)")
+              .run(id, evRow.event_name, sess.username, "pre_cost", "pre_cost", "Pre-Cost Plan Saved", null,
+                `Total Cost ₹${result.totalCost||0}, P&L ₹${result.profitLoss||0}`,
+                ip, (req.headers["user-agent"]||"").slice(0,200));
+          }
           if (gSync.isEnabled()) {
             const evs = getAllEvents();
             gSync.syncPreCost(evs.map((ev) => ({ eventId: ev.id, eventName: ev.name, data: readPreCost(ev.id) })));
           }
           return sendJson(res, 200, result);
+        }
+      }
+
+      // GET /api/events/:id/log — field-level change history
+      if (sub.length === 3 && sub[2] === "log" && m === "GET") {
+        return sendJson(res, 200, db.prepare(
+          "SELECT * FROM event_field_log WHERE event_client_id = ? ORDER BY ts DESC LIMIT 500"
+        ).all(id));
+      }
+
+      // GET/POST /api/events/:id/payment-received
+      if (sub.length === 3 && sub[2] === "payment-received") {
+        const evRow = findEventRow(id);
+        if (!evRow) return sendJson(res, 404, { error: "Not found" });
+        if (m === "GET") {
+          return sendJson(res, 200, db.prepare("SELECT * FROM payment_received WHERE event_id = ? ORDER BY received_at").all(evRow.id));
+        }
+        if (m === "POST") {
+          const body = (await readBody(req)) || {};
+          const amount = Number(body.amount);
+          if (!(amount > 0)) return sendJson(res, 400, { error: "Amount required." });
+          const info = db.prepare(
+            "INSERT INTO payment_received (event_id, cycle_index, cycle_name, amount, received_by, notes) VALUES (?,?,?,?,?,?)"
+          ).run(evRow.id, Number(body.cycleIndex)||0, String(body.cycleName||"").trim(), amount, sess.username, String(body.notes||"").trim()||null);
+          auditLog(sess, req, "CREATE", "payment-received", id, `₹${amount} for ${body.cycleName||"cycle"}`);
+          // Log to field log too
+          const ip = req.socket.remoteAddress || req.headers["x-forwarded-for"] || null;
+          db.prepare("INSERT INTO event_field_log (event_client_id,event_name,username,action,section,field,old_value,new_value,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?,?,?)")
+            .run(id, evRow.event_name, sess.username, "update", "payment_schedule",
+              `Payment Received: ${body.cycleName||"cycle"}`, null, `₹${amount} marked received`, ip, (req.headers["user-agent"]||"").slice(0,200));
+          return sendJson(res, 200, { ok: true, id: info.lastInsertRowid });
         }
       }
     }

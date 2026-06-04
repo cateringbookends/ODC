@@ -12,21 +12,22 @@
     var id = getEventId();
     if (!id) { document.getElementById("loadingState").textContent = "No event ID in URL."; return; }
 
-    var [ev, pettyCash, preCost, bills, heads] = await Promise.all([
+    var [ev, pettyCash, preCost, bills, heads, changeLog] = await Promise.all([
       ODC.api("GET", "/api/events/" + encodeURIComponent(id)).catch(function () { return null; }),
       ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/petty-cash").catch(function () { return { payouts: [], petty: [] }; }),
       ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/pre-cost").catch(function () { return null; }),
       ODC.api("GET", "/api/bills").then(function (b) { return (b || []).filter(function (x) { return x.eventClientId === id; }); }),
-      ODC.api("GET", "/api/master-persons")
+      ODC.api("GET", "/api/master-persons"),
+      ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/log").catch(function () { return []; })
     ]);
 
     if (!ev) { document.getElementById("loadingState").textContent = "Event not found."; return; }
 
     document.title = ev.name + " — ODC Dashboard";
-    renderDashboard(ev, pettyCash, preCost, bills, heads || []);
+    renderDashboard(ev, pettyCash, preCost, bills, heads || [], changeLog || []);
   }
 
-  function renderDashboard(ev, pc, preCost, bills, heads) {
+  function renderDashboard(ev, pc, preCost, bills, heads, changeLog) {
     var main = document.getElementById("mainContent");
 
     var approvedBills = bills.filter(function (b) { return b.status === "approved"; }).reduce(function (s, b) { return s + b.amount; }, 0);
@@ -70,6 +71,9 @@
 
       // Payment schedule
       renderPaymentSection(ev),
+
+      // Change history log
+      renderChangeLog(changeLog),
 
     ].join("");
   }
@@ -208,6 +212,78 @@
         '<tbody>' + rows + '</tbody>' +
       '</table>' +
     '</div>';
+  }
+
+  var SECTION_LABELS = { core: "Event Details", kyc: "KYC / Client Info", payment_schedule: "Payment Schedule", petty_cash: "Petty Cash", pre_cost: "Pre-Cost Plan" };
+  var ACTION_BADGE  = { create: ["#059669","#f0fdf4","Created"], update: ["#3b82f6","#eff6ff","Updated"], petty_cash: ["#8b5cf6","#f5f3ff","Petty Cash"], pre_cost: ["#f59e0b","#fffbeb","Pre-Cost"], delete: ["#dc2626","#fef2f2","Deleted"] };
+
+  function renderChangeLog(log) {
+    var header = '<div class="panel" style="margin-top:1.5rem">' +
+      '<div class="panel-header" style="margin-bottom:1rem">' +
+        '<h2>Change History</h2>' +
+        '<span style="font-size:.78rem;color:var(--muted)">' + (log.length) + ' entries</span>' +
+      '</div>';
+
+    if (!log || !log.length) {
+      return header + '<p class="empty-state" style="padding:1rem">No changes recorded yet.</p></div>';
+    }
+
+    // Group by date
+    var byDay = {};
+    log.forEach(function (r) {
+      var day = (r.ts || "").slice(0, 10);
+      if (!byDay[day]) byDay[day] = [];
+      byDay[day].push(r);
+    });
+
+    var html = header;
+
+    Object.keys(byDay).sort().reverse().forEach(function (day) {
+      var label;
+      try { label = new Date(day).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }); }
+      catch (e) { label = day; }
+
+      html += '<div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:.4rem 0 .2rem;margin-top:.75rem;border-bottom:1px solid var(--surface-border)">' + label + '</div>';
+
+      byDay[day].forEach(function (r) {
+        var badge = ACTION_BADGE[r.action] || ["#64748b","#f8fafc","—"];
+        var time  = r.ts ? new Date(r.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+        var sectionLabel = SECTION_LABELS[r.section] || r.section;
+        var ua    = (r.user_agent || "").replace(/\(.*?\)/g, "").trim().split(" ")[0] || "";
+        var ip    = r.ip_address || "";
+
+        html += '<div style="display:flex;gap:.75rem;padding:.55rem 0;border-bottom:1px solid var(--surface-border);align-items:flex-start">' +
+
+          // Left: action badge + section
+          '<div style="min-width:90px;flex-shrink:0">' +
+            '<span style="display:inline-block;font-size:.68rem;font-weight:700;color:' + badge[0] + ';background:' + badge[1] + ';border-radius:4px;padding:2px 6px;margin-bottom:2px">' + badge[2] + '</span><br>' +
+            '<span style="font-size:.7rem;color:var(--muted)">' + esc(sectionLabel) + '</span>' +
+          '</div>' +
+
+          // Middle: field + old/new values
+          '<div style="flex:1;min-width:0">' +
+            (r.field ? '<div style="font-weight:600;font-size:.82rem;color:var(--ink)">' + esc(r.field) + '</div>' : '') +
+            (r.old_value != null && r.new_value != null && r.old_value !== r.new_value
+              ? '<div style="font-size:.78rem;margin-top:2px">' +
+                  (r.old_value ? '<span style="color:#dc2626;background:#fef2f2;border-radius:3px;padding:1px 5px;margin-right:4px">' + esc(String(r.old_value).slice(0,80)) + '</span>' +
+                  '<span style="color:var(--muted);margin-right:4px">→</span>' : '') +
+                  '<span style="color:#059669;background:#f0fdf4;border-radius:3px;padding:1px 5px">' + esc(String(r.new_value).slice(0,120)) + '</span>' +
+                '</div>'
+              : (r.new_value ? '<div style="font-size:.78rem;color:var(--muted);margin-top:2px">' + esc(String(r.new_value).slice(0,120)) + '</div>' : '')) +
+          '</div>' +
+
+          // Right: who + when + device
+          '<div style="min-width:130px;text-align:right;flex-shrink:0">' +
+            '<div style="font-size:.8rem;font-weight:700;color:var(--ink)">' + esc(r.username) + '</div>' +
+            '<div style="font-size:.72rem;color:var(--muted);margin-top:1px">' + time + '</div>' +
+            (ip ? '<div style="font-size:.68rem;color:var(--muted);margin-top:1px" title="' + esc(r.user_agent||"") + '">' + esc(ip) + (ua ? ' · ' + esc(ua) : '') + '</div>' : '') +
+          '</div>' +
+
+        '</div>';
+      });
+    });
+
+    return html + '</div>';
   }
 
   ODC.ready.then(init);
