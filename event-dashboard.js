@@ -12,22 +12,39 @@
     var id = getEventId();
     if (!id) { document.getElementById("loadingState").textContent = "No event ID in URL."; return; }
 
-    var [ev, pettyCash, preCost, bills, heads, changeLog] = await Promise.all([
+    var [ev, pettyCash, preCost, bills, heads, changeLog, received] = await Promise.all([
       ODC.api("GET", "/api/events/" + encodeURIComponent(id)).catch(function () { return null; }),
       ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/petty-cash").catch(function () { return { payouts: [], petty: [] }; }),
       ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/pre-cost").catch(function () { return null; }),
       ODC.api("GET", "/api/bills").then(function (b) { return (b || []).filter(function (x) { return x.eventClientId === id; }); }),
       ODC.api("GET", "/api/master-persons"),
-      ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/log").catch(function () { return []; })
+      ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/log").catch(function () { return []; }),
+      ODC.api("GET", "/api/events/" + encodeURIComponent(id) + "/payment-received").catch(function () { return []; })
     ]);
 
     if (!ev) { document.getElementById("loadingState").textContent = "Event not found."; return; }
 
     document.title = ev.name + " — ODC Dashboard";
-    renderDashboard(ev, pettyCash, preCost, bills, heads || [], changeLog || []);
+    renderDashboard(ev, pettyCash, preCost, bills, heads || [], changeLog || [], received || []);
+
+    // "Mark Received" button delegation
+    document.getElementById("mainContent").addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-mark-received]");
+      if (!btn || btn.disabled) return;
+      var cycleIndex = Number(btn.dataset.markReceived);
+      var cycleName  = btn.dataset.cycleName;
+      var amount     = Number(btn.dataset.amount);
+      if (!confirm("Mark \"" + cycleName + "\" (₹" + amount.toLocaleString("en-IN") + ") as received?")) return;
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+      ODC.api("POST", "/api/events/" + encodeURIComponent(id) + "/payment-received", {
+        cycleIndex: cycleIndex, cycleName: cycleName, amount: amount, notes: ""
+      }).then(function () { location.reload(); })
+        .catch(function (err) { btn.disabled = false; btn.textContent = "Mark Received"; alert("Failed: " + err.message); });
+    });
   }
 
-  function renderDashboard(ev, pc, preCost, bills, heads, changeLog) {
+  function renderDashboard(ev, pc, preCost, bills, heads, changeLog, received) {
     var main = document.getElementById("mainContent");
 
     var approvedBills = bills.filter(function (b) { return b.status === "approved"; }).reduce(function (s, b) { return s + b.amount; }, 0);
@@ -69,8 +86,8 @@
       // Bills list
       renderBillsSection(bills, heads),
 
-      // Payment schedule
-      renderPaymentSection(ev),
+      // Payment schedule with received tracking
+      renderPaymentSection(ev, received),
 
       // Change history log
       renderChangeLog(changeLog),
@@ -89,7 +106,7 @@
     var rows = pc.payouts || [];
     if (!rows.length && !(pc.petty || []).length) {
       return '<div class="panel" style="margin-bottom:1.5rem"><div class="panel-header"><h2>Petty Cash Tracker</h2></div>' +
-        '<p class="empty-state" style="padding:1rem">No petty cash assigned for this event yet. <a href="petty-cash.html">Set up petty cash →</a></p></div>';
+        '<p class="empty-state" style="padding:1rem">No petty cash assigned for this event yet. <a href="petty-cash.html?event=' + encodeURIComponent(ev.id) + '">Set up petty cash →</a></p></div>';
     }
 
     // Build tracker: per person (head + person name)
@@ -190,24 +207,45 @@
     '</div>';
   }
 
-  function renderPaymentSection(ev) {
+  function renderPaymentSection(ev, received) {
     var cycles = ev.paymentSchedule || [];
     if (!cycles.length) return "";
 
-    var rows = cycles.map(function (c) {
+    // Build a set of received cycle indexes
+    var receivedSet = {};
+    (received || []).forEach(function (r) { receivedSet[r.cycle_index] = r; });
+
+    var totalReceived = (received || []).reduce(function (s, r) { return s + (r.amount || 0); }, 0);
+    var totalScheduled = cycles.reduce(function (s, c) { return s + (c.amount || 0); }, 0);
+    var allReceived = totalScheduled > 0 && totalReceived >= totalScheduled;
+
+    var thStyle = "text-align:left;padding:8px 10px;font-size:.78rem;font-weight:600;color:var(--muted);border-bottom:1px solid var(--surface-border)";
+    var tdStyle = "padding:8px 10px;font-size:.83rem;border-bottom:1px solid var(--surface-border)";
+
+    var rows = cycles.map(function (c, i) {
+      var rec = receivedSet[i];
+      var receivedBadge = rec
+        ? '<span style="font-size:.68rem;background:#f0fdf4;color:#059669;border:1px solid #bbf7d0;border-radius:4px;padding:1px 6px;margin-left:6px">✓ Received ' + new Date(rec.received_at).toLocaleDateString("en-IN") + ' by ' + esc(rec.received_by) + '</span>'
+        : '<button class="secondary-button" data-mark-received="' + i + '" data-cycle-name="' + esc(c.label) + '" data-amount="' + c.amount + '" style="font-size:.72rem;padding:2px 8px;color:#059669;border-color:#86efac;margin-left:6px">Mark Received</button>';
       return '<tr>' +
-        '<td style="padding:8px 10px;font-size:.83rem;border-bottom:1px solid var(--surface-border)">' + esc(c.label) + (c.isAdvance ? ' <span class="bill-status-badge" style="font-size:.68rem;background:#f0fdf4;color:#059669;border-color:#bbf7d0">Advance</span>' : '') + '</td>' +
-        '<td style="padding:8px 10px;font-size:.83rem;border-bottom:1px solid var(--surface-border)">' + esc(c.dueDate || "—") + '</td>' +
-        '<td style="padding:8px 10px;font-size:.83rem;font-weight:700;border-bottom:1px solid var(--surface-border)">' + fmtN(c.amount) + '</td>' +
-        '<td style="padding:8px 10px;font-size:.83rem;border-bottom:1px solid var(--surface-border)">' + esc(c.billing) + (c.method ? ' · ' + esc(c.method) : '') + '</td>' +
+        '<td style="' + tdStyle + '">' + esc(c.label) + (c.isAdvance ? ' <span class="bill-status-badge" style="font-size:.68rem;background:#f0fdf4;color:#059669;border-color:#bbf7d0">Advance</span>' : '') + receivedBadge + '</td>' +
+        '<td style="' + tdStyle + '">' + esc(c.dueDate || "—") + '</td>' +
+        '<td style="' + tdStyle + ';font-weight:700">' + fmtN(c.amount) + '</td>' +
+        '<td style="' + tdStyle + '">' + esc(c.billing) + (c.method ? ' · ' + esc(c.method) : '') + '</td>' +
         '</tr>';
     }).join("");
 
+    var summary = allReceived
+      ? '<span style="font-size:.78rem;color:#059669;font-weight:600">✓ Fully collected — ' + fmtN(totalReceived) + '</span>'
+      : '<span style="font-size:.78rem;color:var(--muted)">Collected: <strong>' + fmtN(totalReceived) + '</strong> / ' + fmtN(totalScheduled) + '</span>';
+
     return '<div class="panel">' +
-      '<div class="panel-header" style="margin-bottom:1rem"><h2>Payment Schedule</h2></div>' +
+      '<div class="panel-header" style="margin-bottom:1rem">' +
+        '<h2>Payment Schedule</h2>' + summary +
+      '</div>' +
       '<table style="width:100%;border-collapse:collapse">' +
         '<thead><tr>' + ["Cycle", "Due Date", "Amount", "Type"].map(function (h) {
-          return '<th style="text-align:left;padding:8px 10px;font-size:.78rem;font-weight:600;color:var(--muted);border-bottom:1px solid var(--surface-border)">' + h + '</th>';
+          return '<th style="' + thStyle + '">' + h + '</th>';
         }).join("") + '</tr></thead>' +
         '<tbody>' + rows + '</tbody>' +
       '</table>' +

@@ -459,6 +459,22 @@ function init() {
   renderEvents();
   updateEventContext();
   updateTotals();
+
+  // Deep-link: ?event=EVT-xxx pre-selects the event
+  const preId = new URLSearchParams(location.search).get("event");
+  if (preId) {
+    const ev = getAllEvents().find((e) => String(e.id) === String(preId));
+    if (ev) {
+      selectedEvent = ev;
+      selectedEventId.value = ev.id;
+      trigger.textContent = ev.name;
+      trigger.setAttribute("aria-label", ev.name);
+      prepDate.value = ODC.isoToDmy(getOneDayBefore(ev.date));
+      ODC.syncDmyDatePicker(prepDate);
+      updateEventContext();
+      loadPettyCash(ev.id);
+    }
+  }
 }
 
 ODC.ready.then(init);
