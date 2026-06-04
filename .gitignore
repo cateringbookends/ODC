@@ -33,3 +33,5 @@ google-sync-config.json
 Thumbs.db
 .DS_Store
 *.log
+verify-ui.js
+verify-screenshots/
