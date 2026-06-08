@@ -4,196 +4,168 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://cdn.jsdelivr.net; script-src 'self' https://www.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
   <title>Pre Cost Planning - Event Dashboard</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js?v=5"></script>
-  <script src="firebase-backend.js?v=5"></script>
-  <script src="firebase-auth.js?v=5"></script>
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
+  <script src="auth-guard.js?v=8"></script>
   <header class="top-nav">
     <div class="top-nav-bar">
-      <a class="brand" href="index.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <a class="brand" href="dashboard.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
       <div id="nav-user" class="nav-user"></div>
     </div>
     <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="dashboard.html">Dashboard</a>
       <a href="index.html">Sales Intake</a>
       <a href="saved-events.html">Saved Events</a>
       <a class="active" href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
+      <a href="financial-control.html">Financial Control</a>
       <a href="master-persons.html">Master Persons</a>
       <a href="bill-submission.html">Bill Submission</a>
       <a href="analytics.html">Analytics</a>
-      <a href="admin.html">Admin</a>
+      <a href="admin.html" data-admin-only>Admin</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>
 
   <main class="app-shell planning-shell">
     <section class="panel planning-panel">
+
+      <!-- ── Page Header ─────────────────────────────── -->
       <div class="panel-header">
         <p class="eyebrow">Step 2</p>
         <h1>Pre Cost Planning</h1>
       </div>
 
       <form class="intake-form" id="planningForm">
-        <section class="event-picker field">
-          <span>Select Open Event</span>
-          <button type="button" class="event-picker-trigger" id="eventPickerTrigger" aria-label="Choose event" aria-expanded="false" aria-controls="eventPickerList">
-            Choose event
-          </button>
-          <div class="event-picker-menu" id="eventPickerMenu" hidden>
-            <input type="search" id="eventSearch" placeholder="Search open events">
-            <div class="event-picker-list" id="eventPickerList" role="listbox"></div>
-          </div>
-          <input type="hidden" id="selectedEventId" name="selectedEventId">
-        </section>
 
-        <label class="field">
-          <span>Planning Date</span>
-          <input type="text" class="date-dmy" placeholder="DD-MM-YYYY" autocomplete="off">
-        </label>
-
-        <label class="field planning-zone-field">
-          <span>Zone</span>
-          <input type="text" id="planningZone" readonly placeholder="Select event first">
-        </label>
-
-        <label class="field planning-zone-extra" id="planningZoneExtraField" hidden>
-          <span>City</span>
-          <input type="text" id="planningZoneCity" readonly placeholder="Outstation city">
-        </label>
-
-        <section class="outstation-costs" id="outstationCostsSection" hidden aria-labelledby="outstationCostsTitle">
-          <div class="section-heading">
-            <p class="eyebrow">Outstation Costs</p>
-            <h2 id="outstationCostsTitle">Additional Charges</h2>
-          </div>
-
-          <div class="cost-grid outstation-grid">
-            <label class="field">
-              <span>Staff Transportation Charge</span>
-              <input type="number" id="staffTransportationCharge" min="0" step="0.01" placeholder="0.00">
-            </label>
-
-            <label class="field">
-              <span>Staff Accommodation Charge</span>
-              <input type="number" id="staffAccommodationCharge" min="0" step="0.01" placeholder="0.00">
-            </label>
-
-            <label class="field">
-              <span>Staff Food Cost <small>1000 * Staff No.</small></span>
-              <input type="number" id="staffFoodCost" min="0" step="0.01" placeholder="0.00">
-            </label>
-
-            <label class="field">
-              <span>Refeervan</span>
-              <input type="number" id="refervanCharge" min="0" step="0.01" placeholder="0.00">
-            </label>
-
-            <label class="field">
-              <span>Equipment Transportation</span>
-              <input type="number" id="equipmentTransportationCharge" min="0" step="0.01" placeholder="0.00">
-            </label>
-          </div>
-        </section>
-
-        <section class="payment-schedule">
-          <div class="schedule-header">
-            <div>
-              <p class="eyebrow">Planning Workspace</p>
-              <h2>Pre Cost Inputs</h2>
+        <!-- ── Event + Date selector ───────────────────── -->
+        <div class="planning-top-row">
+          <section class="event-picker field">
+            <span>Select Open Event</span>
+            <button type="button" class="event-picker-trigger" id="eventPickerTrigger"
+              aria-label="Choose event" aria-expanded="false" aria-controls="eventPickerList">
+              Choose event
+            </button>
+            <div class="event-picker-menu" id="eventPickerMenu" hidden>
+              <input type="search" id="eventSearch" placeholder="Search open events">
+              <div class="event-picker-list" id="eventPickerList" role="listbox"></div>
             </div>
-          </div>
+            <input type="hidden" id="selectedEventId" name="selectedEventId">
+          </section>
 
-          <div class="planning-context">
-            <div>
-              <span>PAX</span>
-              <strong id="planningPax">0</strong>
-            </div>
-            <div>
-              <span>No. of Days</span>
-              <strong id="planningDays">0</strong>
-            </div>
-          </div>
+          <label class="field planning-date-field">
+            <span>Planning Date</span>
+            <input type="text" class="date-dmy" placeholder="DD-MM-YYYY" autocomplete="off">
+          </label>
+        </div>
 
-          <div class="cost-grid food-cost-row">
+        <!-- ── Event KPI strip ────────────────────────── -->
+        <div class="pc-kpi-strip">
+          <div class="pc-kpi">
+            <span>PAX</span>
+            <strong id="planningPax">—</strong>
+          </div>
+          <div class="pc-kpi">
+            <span>Cost / PAX</span>
+            <strong id="planningCostPerPax">—</strong>
+          </div>
+          <div class="pc-kpi">
+            <span>No. of Days</span>
+            <strong id="planningDays">—</strong>
+          </div>
+          <div class="pc-kpi pc-kpi-billing">
+            <span>Total Billing <small>(pre-GST)</small></span>
+            <strong id="planningTotalBilling">—</strong>
+          </div>
+        </div>
+
+        <!-- ── Food & Staff ───────────────────────────── -->
+        <section class="pc-section">
+          <div class="pc-section-head">
+            <p class="eyebrow">Primary Costs</p>
+            <h2>Food &amp; Staff</h2>
+          </div>
+          <!-- Food cost row -->
+          <div class="pc-grid pc-grid-2">
             <label class="field">
               <span>Food Cost <small>per PAX</small></span>
               <input type="number" id="foodCostPerPax" min="0" step="0.01" placeholder="0.00">
             </label>
-
             <label class="field">
               <span>Total Food Cost</span>
               <output class="cost-output" id="totalFoodCost">Rs. 0.00</output>
             </label>
           </div>
 
-          <div class="cost-grid staff-cost-row staff-table-row">
-            <label class="field staff-file-field">
-              <span>Staff Data File</span>
-              <button type="button" class="file-placeholder" disabled>Choose file</button>
-            </label>
-
-            <div class="staff-table">
-              <div class="staff-table-head">
-                <span>Staff No.</span>
-                <span>Total Staff Cost</span>
-              </div>
-              <div class="staff-table-body">
-                <label>
-                  <input type="number" id="staffCount" min="0" step="1" placeholder="0" aria-label="Staff No.">
-                </label>
-                <label>
-                  <input type="number" id="totalStaffCostInput" min="0" step="0.01" placeholder="0.00" aria-label="Total Staff Cost">
-                </label>
-              </div>
+          <!-- Staff inner card -->
+          <div class="pc-staff-card">
+            <div class="field pc-file-field">
+              <span>Staff Data File <small>xlsx / csv</small>
+                <span class="pc-hint-icon">ⓘ<span class="pc-hint-tip">Employee code, name, days, salary — any column order</span></span>
+              </span>
+              <button type="button" class="secondary-button pc-file-btn" id="staffDataFileButton">↑ Upload</button>
+              <input type="file" id="staffDataFile" accept=".xlsx,.xls,.xlsm,.xlsb,.csv" style="display:none">
+              <small id="staffFileStatus" class="field-hint" style="display:none"></small>
             </div>
-          </div>
-
-          <div class="cost-grid extra-cost-row">
             <label class="field">
-              <span>Equipment Depreciation</span>
-              <input type="number" id="equipmentDepreciation" min="0" step="0.01" placeholder="0.00">
+              <span>Staff Count</span>
+              <input type="number" id="staffCount" min="0" step="1" placeholder="0" aria-label="Staff No.">
             </label>
-
             <label class="field">
-              <span>Third Party Vendor</span>
-              <input type="number" id="thirdPartyVendor" min="0" step="0.01" placeholder="0.00">
-            </label>
-
-            <label class="field">
-              <span>Decor Charge <small>default 5% of billing</small></span>
-              <input type="number" id="decorCharge" min="0" step="0.01" placeholder="0.00">
-            </label>
-
-            <label class="field">
-              <span>Miscellaneous</span>
-              <input type="number" id="miscellaneousCost" min="0" step="0.01" placeholder="0.00">
-            </label>
-
-            <label class="field total-cost-field">
-              <span>Total Cost</span>
-              <output class="cost-output total-cost-output" id="totalPlanningCost">Rs. 0.00</output>
-            </label>
-
-            <label class="field total-cost-field">
-              <span>Profit / Loss</span>
-              <output class="cost-output profit-loss-output" id="profitLoss">Rs. 0.00</output>
+              <span>Total Staff Cost</span>
+              <input type="number" id="totalStaffCostInput" min="0" step="0.01" placeholder="Auto" aria-label="Total Staff Cost">
             </label>
           </div>
         </section>
 
-      </form>
-    </section>
-  </main>
-  <script src="store.js?v=5"></script>
-  <script src="data.js?v=5"></script>
-  <script src="event-store.js?v=5"></script>
-  <script src="pre-cost-planning.js?v=5"></script>
-</body>
-</html>
+        <!-- ── Base Costs ─────────────────────────────── -->
+        <section class="pc-section">
+          <div class="pc-section-head">
+            <p class="eyebrow">Base Costs</p>
+            <h2>Operating Inputs</h2>
+          </div>
+          <div class="pc-grid pc-grid-4">
+            <label class="field">
+              <span>Equipment Depreciation</span>
+              <input type="number" id="equipmentDepreciation" min="0" step="0.01" placeholder="0.00">
+            </label>
+            <label class="field">
+              <span>Third Party Vendor</span>
+              <input type="number" id="thirdPartyVendor" min="0" step="0.01" placeholder="0.00">
+            </label>
+            <label class="field">
+              <span>Decor Charge <small>default 5% billing</small></span>
+              <input type="number" id="decorCharge" min="0" step="0.01" placeholder="Auto">
+            </label>
+            <label class="field">
+              <span>Miscellaneous</span>
+              <input type="number" id="miscellaneousCost" min="0" step="0.01" placeholder="0.00">
+            </label>
+          </div>
+        </section>
+
+        <!-- ── Additional / Outstation Costs ─────────── -->
+        <section class="pc-section" id="outstationCostsSection">
+          <div class="pc-section-head">
+            <p class="eyebrow">Additional Costs</p>
+            <h2>Outstation &amp; Logistics</h2>
+          </div>
+          <div class="pc-grid pc-grid-5">
+            <label class="field">
+              <span>Staff Transportation</span>
+              <input type="number" id="staffTransportationCharge" min="0" step="0.01" placeholder="0.00">
+            </label>
+            <label class="field">
+              <span>Staff Accommodation</span>
+              <input type="number" id="staffAccommodationCharge" min="0" step="0.01" placeholder="0.00">
+            </label>
+            <label class="field">
+              <span>Staff Food Cost <small>1000 × staff</small></span>
+              <input type="number" id="staffFoodCost" min="0" step="0.01" placeholder="Auto">
+            </label>
+            <label class="field">
+              <span>Refervan</span>
+              <input type="number" id="refervanCharge" min="0" step="0.01" placeholder="0.

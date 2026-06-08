@@ -1,503 +1,576 @@
-"use strict";
-(function () {
-  var headMap = {};        // headId -> { name, persons }
-  var pettyCashByEvent = {}; // eventId -> { payouts: [] }
-  var allEvents = [];
+const money = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const CATEGORIES = ["food", "transport", "equipment", "accommodation", "misc"];
+let tesseractLoadPromise = null;
 
-  function esc(s) { return ODC.escapeHtml(s); }
+function isBillHeadMaster(head) {
+  return !!String(head?.id || head?.name || "").trim();
+}
 
-  /* ================================================================
-   * Init
-   * ================================================================ */
-  function init() {
-    loadEvents();
-    loadHeads();
-    loadBills();
-    setupBillsListDelegate();
-    setupSubmitBtn();
-    setupOCR();
-    setupEventChange();
-    setupHeadChange();
+async function apiFetch(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    credentials: "same-origin",
+    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+    body: body !== undefined ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.status);
+  return data;
+}
 
-    var user = window.ODC_USER;
-    if (user && user.role === "admin") {
-      document.getElementById("billsEyebrow").textContent = "All Submissions";
-      document.getElementById("billsTitle").textContent = "All Submitted Bills";
-      var ap = document.getElementById("adminUsersPanel");
-      if (ap) { ap.hidden = false; loadUsers(); setupAddUserBtn(); }
-    }
-  }
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (tesseractLoadPromise) return tesseractLoadPromise;
+  tesseractLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.onload = () => resolve(window.Tesseract);
+    script.onerror = () => reject(new Error("OCR library could not load."));
+    document.head.append(script);
+  });
+  return tesseractLoadPromise;
+}
 
-  /* ---- Events ---- */
-  function loadEvents() {
-    fetch("/api/events", { credentials: "same-origin" })
-      .then(function (r) { return r.json(); })
-      .then(function (events) {
-        allEvents = events || [];
-        var sel = document.getElementById("billEvent");
-        allEvents.forEach(function (ev) {
-          var opt = document.createElement("option");
-          opt.value = ev.id;
-          opt.textContent = (ev.externalId || ev.id) + " — " + ev.name;
-          sel.appendChild(opt);
-        });
-      }).catch(function () {});
-  }
-
-  /* ---- Heads (all) ---- */
-  function loadHeads() {
-    fetch("/api/master-persons", { credentials: "same-origin" })
-      .then(function (r) { return r.json(); })
-      .then(function (heads) {
-        headMap = {};
-        (heads || []).forEach(function (h) { headMap[h.id] = h; });
-      }).catch(function () {});
-  }
-
-  /* ---- On event change: load heads filtered to petty cash for that event ---- */
-  function setupEventChange() {
-    document.getElementById("billEvent").addEventListener("change", function () {
-      var eventId = this.value;
-      if (!eventId) { populateHeads([]); return; }
-      fetch("/api/events/" + encodeURIComponent(eventId) + "/petty-cash", { credentials: "same-origin" })
-        .then(function (r) { return r.json(); })
-        .then(function (pc) {
-          pettyCashByEvent[eventId] = pc;
-          var pcHeadIds = new Set((pc.payouts || []).map(function (p) { return p.headId; }));
-          populateHeads(Array.from(pcHeadIds), pc.payouts || []);
-        })
-        .catch(function () { populateHeads([]); });
+function parseReceiptText(text) {
+  const lines = String(text || "").toLowerCase().split("\n");
+  const patterns = [
+    /(?:grand\s*total|net\s*amount|total\s*amount|total\s*payable|amount\s*due|total)[:\s]*(?:rs\.?|₹|inr)?\s*([0-9,]+\.?\d*)/i,
+    /(?:rs\.?|₹|inr)\s*([0-9,]+\.?\d*)/i,
+    /([0-9,]+\.?\d*)\s*\/?\s*(?:rs\.?|₹|inr)/i
+  ];
+  const amounts = [];
+  lines.forEach((line) => {
+    patterns.forEach((pattern) => {
+      const match = line.match(pattern);
+      if (!match) return;
+      const value = Number.parseFloat(match[1].replace(/,/g, ""));
+      if (value > 0 && value < 1000000) amounts.push(value);
     });
-  }
+  });
 
-  function populateHeads(pcHeadIds, payouts) {
-    var sel  = document.getElementById("billHead");
-    var hint = document.getElementById("headHint");
-    sel.innerHTML = '<option value="">— Select department head —</option>';
+  const full = String(text || "").toLowerCase();
+  let category = "misc";
+  if (/restaurant|food|meal|lunch|dinner|breakfast|snack|tea|coffee|catering/.test(full)) category = "food";
+  else if (/taxi|uber|ola|cab|petrol|diesel|fuel|auto|bus|train|flight|transport|toll/.test(full)) category = "transport";
+  else if (/equipment|rental|hire|machine|generator|tool|material/.test(full)) category = "equipment";
+  else if (/hotel|lodge|room|stay|accommodation|resort/.test(full)) category = "accommodation";
 
-    if (pcHeadIds.length > 0) {
-      // Only petty cash heads — no other departments shown
-      pcHeadIds.forEach(function (hid) {
-        var h = headMap[hid];
-        var opt = document.createElement("option");
-        opt.value = hid;
-        var allocated = (payouts || []).filter(function (p) { return p.headId === hid; }).reduce(function (s, p) { return s + p.amount; }, 0);
-        opt.textContent = (h ? h.name : hid) + "  —  ₹" + allocated.toLocaleString("en-IN") + " allocated";
-        sel.appendChild(opt);
+  return {
+    amount: amounts.length ? Math.max(...amounts) : null,
+    category
+  };
+}
+
+function buildOcrCard(onReceiptReady) {
+  const wrap = document.createElement("div");
+  wrap.className = "receipt-ocr-card";
+
+  const row = document.createElement("div");
+  row.className = "receipt-ocr-row";
+
+  const label = document.createElement("label");
+  label.className = "receipt-upload-btn";
+  label.htmlFor = "receiptFile";
+  label.textContent = "Scan Receipt";
+
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.id = "receiptFile";
+  fileInput.accept = "image/*,application/pdf";
+  fileInput.hidden = true;
+  label.append(fileInput);
+
+  const hint = document.createElement("span");
+  hint.className = "receipt-ocr-hint";
+  hint.textContent = "Upload receipt photo to auto-fill amount and category";
+
+  const status = document.createElement("span");
+  status.id = "ocrStatus";
+  status.className = "receipt-ocr-status";
+
+  row.append(label, hint, status);
+
+  const result = document.createElement("div");
+  result.id = "ocrResult";
+  result.className = "receipt-ocr-result";
+  result.hidden = true;
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    onReceiptReady?.(null);
+    status.textContent = "Loading OCR...";
+    result.hidden = true;
+    try {
+      const Tesseract = await loadTesseract();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target.result);
+        reader.onerror = () => reject(new Error("Could not read receipt file."));
+        reader.readAsDataURL(file);
       });
-      hint.textContent = "Only department heads with petty cash for this event are shown.";
-    } else {
-      // No petty cash — show all heads as fallback
-      Object.keys(headMap).forEach(function (hid) {
-        var opt = document.createElement("option");
-        opt.value = hid;
-        opt.textContent = headMap[hid].name;
-        sel.appendChild(opt);
+      onReceiptReady?.({
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        base64: String(dataUrl).split(",")[1] || ""
       });
-      hint.textContent = "No petty cash assigned for this event.";
+      status.textContent = "Scanning receipt...";
+      const ocr = await Tesseract.recognize(dataUrl, "eng", {
+        logger: (m) => {
+          if (m.status === "recognizing text") status.textContent = "Scanning... " + Math.round(m.progress * 100) + "%";
+        }
+      });
+      const text = ocr.data.text || "";
+      const parsed = parseReceiptText(text);
+      if (parsed.amount) document.getElementById("billAmount").value = parsed.amount;
+      if (parsed.category) document.getElementById("billCategory").value = parsed.category;
+      status.textContent = "Done";
+      result.textContent = "Extracted: " + text.replace(/\n+/g, " ").slice(0, 220);
+      result.hidden = false;
+    } catch (err) {
+      onReceiptReady?.(null);
+      status.textContent = "Scan failed. Enter manually.";
+      result.textContent = err.message || "OCR failed.";
+      result.hidden = false;
     }
+  });
 
-    // Reset person field — dropdown visible, text hidden
+  wrap.append(row, result);
+  return wrap;
+}
+
+// ── Form ───────────────────────────────────────────────────────────────
+function buildForm(events, masterPersons) {
+  const formEl = document.getElementById("billForm");
+  formEl.innerHTML = "";
+  let selectedReceipt = null;
+  const billHeadMasters = (masterPersons || []).filter(isBillHeadMaster);
+  const headMap = {};
+  billHeadMasters.forEach((head) => { headMap[head.id] = head; });
+
+  const statusEl = document.createElement("p");
+  statusEl.className = "form-status";
+  statusEl.id = "billFormStatus";
+  formEl.append(buildOcrCard((receipt) => { selectedReceipt = receipt; }));
+
+  // Event select
+  const evLbl = document.createElement("label");
+  evLbl.className = "field";
+  evLbl.style.marginBottom = "12px";
+  const evSpan = document.createElement("span");
+  evSpan.textContent = "Event";
+  const evSel = document.createElement("select");
+  evSel.id = "billEvent";
+  const evDefault = document.createElement("option");
+  evDefault.value = "";
+  evDefault.textContent = "Select event…";
+  evSel.append(evDefault);
+  events.filter(e => e.status !== "cancelled").forEach(ev => {
+    const opt = document.createElement("option");
+    opt.value = ev.id;
+    opt.textContent = ev.name + " - " + ODC.eventContextText(ev, { includeDays: true });
+    evSel.append(opt);
+  });
+  evLbl.append(evSpan, evSel);
+  formEl.append(evLbl);
+
+  // Head select
+  const headLbl = document.createElement("label");
+  headLbl.className = "field";
+  headLbl.style.marginBottom = "12px";
+  const headSpan = document.createElement("span");
+  headSpan.textContent = "Head";
+  const headSel = document.createElement("select");
+  headSel.id = "billHead";
+  const headDefault = document.createElement("option");
+  headDefault.value = "";
+  headDefault.textContent = "Select head…";
+  headSel.append(headDefault);
+  const headHint = document.createElement("span");
+  headHint.id = "headHint";
+  headHint.className = "field-hint";
+  headLbl.append(headSpan, headSel);
+  headLbl.append(headHint);
+  formEl.append(headLbl);
+
+  function populateHeads(headIds, payouts) {
+    headSel.innerHTML = "";
+    const first = document.createElement("option");
+    first.value = "";
+    first.textContent = "Select department head...";
+    headSel.append(first);
+
+    if (headIds.length) {
+      headIds.forEach((headId) => {
+        const head = headMap[headId] || (masterPersons || []).find((item) => String(item.id) === String(headId));
+        const opt = document.createElement("option");
+        const allocated = (payouts || []).filter((p) => p.headId === headId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        opt.value = headId;
+        opt.textContent = (head ? head.name : headId) + " - " + money.format(allocated) + " allocated";
+        headSel.append(opt);
+      });
+      headHint.textContent = "Only heads with petty cash for this event are shown.";
+    } else {
+      billHeadMasters.forEach((head) => {
+        const persons = Array.isArray(head.persons) ? head.persons : [];
+        const headPersons = persons.filter((person) => {
+          const text = typeof person === "string" ? person : [person.name, person.personName, person.designation].filter(Boolean).join(" ");
+          return /\bhead\b/i.test(String(text || ""));
+        });
+        if (headPersons.length) {
+          headPersons.forEach((person) => {
+            const name = typeof person === "string" ? person : person.name || person.personName || "";
+            if (!name) return;
+            const opt = document.createElement("option");
+            opt.value = head.id;
+            opt.dataset.personName = name;
+            opt.textContent = name;
+            headSel.append(opt);
+          });
+          return;
+        }
+        const opt = document.createElement("option");
+        opt.value = head.id;
+        opt.textContent = head.name;
+        headSel.append(opt);
+      });
+      headHint.textContent = billHeadMasters.length
+        ? "No petty cash assigned for this event. Showing all Master Persons posts."
+        : "No names found. Add posts and people in Master Persons.";
+    }
     resetPersonField();
   }
 
+  // Person name
+  const personLbl = document.createElement("label");
+  personLbl.className = "field";
+  personLbl.style.marginBottom = "12px";
+  const personSpan = document.createElement("span");
+  personSpan.textContent = "Your Name";
+  const personSel = document.createElement("select");
+  personSel.id = "billPerson";
+  const personText = document.createElement("input");
+  personText.type = "text";
+  personText.id = "billPersonText";
+  personText.placeholder = "Enter your name";
+  personText.style.display = "none";
+  personLbl.append(personSpan, personSel, personText);
+  formEl.append(personLbl);
+
   function resetPersonField() {
-    var personSel  = document.getElementById("billPerson");
-    var personText = document.getElementById("billPersonText");
-    personSel.innerHTML = '<option value="">— Select your name —</option>';
+    personSel.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Select your name...";
+    personSel.append(opt);
     personSel.style.display = "";
     personText.style.display = "none";
     personText.value = "";
   }
 
-  /* ---- On head change: load persons under that head ---- */
-  function setupHeadChange() {
-    document.getElementById("billHead").addEventListener("change", function () {
-      var headId = this.value;
-      var personSel  = document.getElementById("billPerson");
-      var personText = document.getElementById("billPersonText");
-
-      if (!headId || headId === "direct") {
-        // Direct — free text only
-        personSel.style.display = "none";
-        personText.style.display = "";
-        personText.placeholder = "Enter your name";
-        return;
-      }
-
-      var head = headMap[headId];
-      if (!head || !head.persons || !head.persons.length) {
-        // Head has no persons listed — free text
-        personSel.style.display = "none";
-        personText.style.display = "";
-        personText.placeholder = "Enter your name";
-        return;
-      }
-
-      // Show dropdown from master persons
-      personSel.innerHTML = '<option value="">— Select your name —</option>';
-      head.persons.forEach(function (p) {
-        var pname = typeof p === "string" ? p : (p.name || "");
-        var opt = document.createElement("option");
-        opt.value = pname;
-        opt.textContent = pname + (p.designation ? " · " + p.designation : "");
-        personSel.appendChild(opt);
-      });
-      var other = document.createElement("option");
-      other.value = "__other__";
-      other.textContent = "Other (type name)";
-      personSel.appendChild(other);
-
-      personSel.style.display = "";
-      personText.style.display = "none";
-
-      personSel.onchange = function () {
-        if (this.value === "__other__") {
-          personText.style.display = "";
-          personText.value = "";
-          personText.focus();
-        } else {
-          personText.style.display = "none";
-        }
-      };
-    });
-  }
-
   function getPersonName() {
-    var sel  = document.getElementById("billPerson");
-    var text = document.getElementById("billPersonText");
-    if (sel.style.display !== "none" && sel.value && sel.value !== "__other__") return sel.value;
-    return text.value.trim();
+    if (personSel.style.display !== "none" && personSel.value && personSel.value !== "__other__") return personSel.value;
+    return personText.value.trim();
   }
 
-  /* ================================================================
-   * Receipt OCR (Tesseract.js)
-   * ================================================================ */
-  function setupOCR() {
-    var fileInput = document.getElementById("receiptFile");
-    if (!fileInput) return;
-
-    fileInput.addEventListener("change", function () {
-      var file = this.files[0];
-      if (!file) return;
-      if (typeof Tesseract === "undefined") {
-        document.getElementById("ocrStatus").textContent = "OCR library loading…";
-        return;
-      }
-      var status = document.getElementById("ocrStatus");
-      var resultEl = document.getElementById("ocrResult");
-      status.textContent = "Scanning receipt…";
-      resultEl.hidden = true;
-
-      var reader = new FileReader();
-      reader.onload = function (e) {
-        Tesseract.recognize(e.target.result, "eng", {
-          logger: function (m) { if (m.status === "recognizing text") status.textContent = "Scanning… " + Math.round(m.progress * 100) + "%"; }
-        }).then(function (result) {
-          var text = result.data.text;
-          var parsed = parseReceiptText(text);
-          status.textContent = "Done!";
-
-          if (parsed.amount) {
-            document.getElementById("billAmount").value = parsed.amount;
-          }
-          if (parsed.category) {
-            document.getElementById("billCategory").value = parsed.category;
-          }
-
-          resultEl.innerHTML = "<strong>Extracted:</strong> " + esc(text.replace(/\n+/g, " ").slice(0, 200));
-          resultEl.hidden = false;
-        }).catch(function (e) {
-          status.textContent = "Scan failed — enter manually.";
-          console.error("OCR error:", e);
-        });
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  function parseReceiptText(text) {
-    var amount = null;
-    var lines = text.toLowerCase().split("\n");
-
-    // Find the largest amount that looks like a total
-    var patterns = [
-      /(?:grand\s*total|net\s*amount|total\s*amount|total\s*payable|total|amount\s*due)[:\s]*(?:rs\.?|₹|inr)?\s*([0-9,]+\.?\d*)/i,
-      /(?:rs\.?|₹|inr)\s*([0-9,]+\.?\d*)/i,
-      /([0-9,]+\.?\d*)\s*\/?\s*(?:rs\.?|₹|inr)/i
-    ];
-
-    var amounts = [];
-    for (var line of lines) {
-      for (var pat of patterns) {
-        var m = line.match(pat);
-        if (m) {
-          var v = parseFloat(m[1].replace(/,/g, ""));
-          if (v > 0 && v < 1000000) amounts.push(v);
-        }
-      }
+  evSel.addEventListener("change", async () => {
+    if (!evSel.value) {
+      populateHeads([], []);
+      return;
     }
-    // Take the maximum (most likely total)
-    if (amounts.length) amount = Math.max.apply(null, amounts);
+    try {
+      const pettyCash = await apiFetch("GET", "/api/events/" + encodeURIComponent(evSel.value) + "/petty-cash");
+      const payouts = pettyCash.payouts || [];
+      const headIds = [...new Set(payouts.map((p) => p.headId).filter(Boolean))];
+      populateHeads(headIds, payouts);
+    } catch {
+      populateHeads([], []);
+    }
+  });
 
-    // Detect category
-    var full = text.toLowerCase();
-    var category = "misc";
-    if (/restaurant|food|meal|lunch|dinner|breakfast|snack|tea|coffee|hotel food|catering/.test(full)) category = "food";
-    else if (/taxi|uber|ola|cab|petrol|diesel|fuel|auto rickshaw|bus|train|flight|transport|toll/.test(full)) category = "transport";
-    else if (/equipment|rental|hire|machine|generator|tool|material/.test(full)) category = "equipment";
-    else if (/hotel|lodge|room|stay|accommodation|resort/.test(full)) category = "accommodation";
+  headSel.addEventListener("change", () => {
+    const selectedPersonName = headSel.selectedOptions[0]?.dataset.personName || "";
+    if (selectedPersonName) {
+      personSel.style.display = "none";
+      personText.style.display = "";
+      personText.value = selectedPersonName;
+      return;
+    }
+    const head = headMap[headSel.value];
+    if (!head || !Array.isArray(head.persons) || !head.persons.length) {
+      personSel.style.display = "none";
+      personText.style.display = "";
+      personText.focus();
+      return;
+    }
+    personSel.innerHTML = "";
+    const first = document.createElement("option");
+    first.value = "";
+    first.textContent = "Select your name...";
+    personSel.append(first);
+    head.persons.forEach((person) => {
+      const name = typeof person === "string" ? person : person.name || person.personName || "";
+      if (!name) return;
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name + (person.designation ? " - " + person.designation : "");
+      personSel.append(opt);
+    });
+    const other = document.createElement("option");
+    other.value = "__other__";
+    other.textContent = "Other (type name)";
+    personSel.append(other);
+    personSel.style.display = "";
+    personText.style.display = "none";
+  });
 
-    return { amount: amount, category: category };
-  }
+  personSel.addEventListener("change", () => {
+    if (personSel.value === "__other__") {
+      personText.style.display = "";
+      personText.value = "";
+      personText.focus();
+    } else {
+      personText.style.display = "none";
+    }
+  });
 
-  /* ================================================================
-   * Bills list
-   * ================================================================ */
-  function loadBills() {
-    fetch("/api/bills", { credentials: "same-origin" })
-      .then(function (r) { return r.json(); })
-      .then(renderBills)
-      .catch(function () { renderBills([]); });
-  }
+  // Amount + Category row
+  const amtRow = document.createElement("div");
+  amtRow.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px";
 
-  function renderBills(bills) {
-    var container = document.getElementById("billsList");
-    container.innerHTML = "";
-    if (!bills || !bills.length) {
-      var p = document.createElement("p");
-      p.className = "empty-state";
+  const amtLbl = document.createElement("label");
+  amtLbl.className = "field";
+  const amtSpan = document.createElement("span");
+  amtSpan.textContent = "Amount (₹)";
+  const amtInput = document.createElement("input");
+  amtInput.type = "number";
+  amtInput.id = "billAmount";
+  amtInput.min = "1";
+  amtInput.step = "0.01";
+  amtInput.placeholder = "0.00";
+  amtLbl.append(amtSpan, amtInput);
+  amtRow.append(amtLbl);
+
+  const catLbl = document.createElement("label");
+  catLbl.className = "field";
+  const catSpan = document.createElement("span");
+  catSpan.textContent = "Category";
+  const catSel = document.createElement("select");
+  catSel.id = "billCategory";
+  CATEGORIES.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c.charAt(0).toUpperCase() + c.slice(1);
+    catSel.append(opt);
+  });
+  catLbl.append(catSpan, catSel);
+  amtRow.append(catLbl);
+  formEl.append(amtRow);
+
+  // Description
+  const descLbl = document.createElement("label");
+  descLbl.className = "field";
+  descLbl.style.marginBottom = "16px";
+  const descSpan = document.createElement("span");
+  descSpan.textContent = "Description";
+  const descTa = document.createElement("textarea");
+  descTa.id = "billDesc";
+  descTa.rows = 2;
+  descTa.placeholder = "What is this bill for?";
+  descLbl.append(descSpan, descTa);
+  formEl.append(descLbl);
+
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "button";
+  submitBtn.className = "primary-button";
+  submitBtn.style.cssText = "width:100%;padding:10px;font-size:0.95rem";
+  submitBtn.textContent = "Submit Bill";
+  submitBtn.addEventListener("click", async () => {
+    const eventId = document.getElementById("billEvent").value;
+    const headId = document.getElementById("billHead").value;
+    const personName = getPersonName();
+    const amount = Number(document.getElementById("billAmount").value);
+    const category = document.getElementById("billCategory").value;
+    const description = document.getElementById("billDesc").value.trim();
+
+    const fStatus = document.getElementById("billFormStatus");
+    fStatus.className = "form-status";
+    if (!eventId || !headId || !personName || !(amount > 0)) {
+      fStatus.textContent = "Event, head, name, and amount are required.";
+      fStatus.className = "form-status error";
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Submitting…";
+    try {
+      const saved = await apiFetch("POST", "/api/bills", { eventId, headId, personName, amount, category, description, receipt: selectedReceipt });
+      fStatus.textContent = saved.receipt?.url ? "Bill submitted and receipt saved to Drive." : "Bill submitted successfully.";
+      document.getElementById("billAmount").value = "";
+      document.getElementById("billDesc").value = "";
+      document.getElementById("billCategory").value = "misc";
+      selectedReceipt = null;
+      const receiptFile = document.getElementById("receiptFile");
+      if (receiptFile) receiptFile.value = "";
+      document.getElementById("ocrStatus").textContent = "";
+      const ocrResult = document.getElementById("ocrResult");
+      if (ocrResult) ocrResult.hidden = true;
+      loadBills();
+    } catch (err) {
+      fStatus.textContent = "Error: " + err.message;
+      fStatus.className = "form-status error";
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit Bill";
+    }
+  });
+  formEl.append(submitBtn, statusEl);
+  populateHeads([], []);
+}
+
+// ── Bills List ─────────────────────────────────────────────────────────
+let billsLoading = false;
+async function loadBills() {
+  if (billsLoading) return;
+  billsLoading = true;
+  const listEl = document.getElementById("billList");
+  const statusEl = document.getElementById("billListStatus");
+  statusEl.textContent = "Loading…";
+  statusEl.hidden = false;
+  listEl.innerHTML = "";
+
+  try {
+    const bills = await apiFetch("GET", "/api/bills");
+    statusEl.hidden = true;
+
+    if (bills.length === 0) {
+      const p = document.createElement("p");
+      p.className = "form-status";
       p.textContent = "No bills submitted yet.";
-      container.appendChild(p);
+      listEl.append(p);
       return;
     }
 
-    var user = window.ODC_USER;
-    bills.forEach(function (bill) {
-      var card = document.createElement("div");
-      card.className = "bill-card bill-status-" + bill.status;
+    const isAdmin = window.ODC_USER && window.ODC_USER.role === "admin";
 
-      var head = document.createElement("div");
-      head.className = "bill-card-head";
+    bills.forEach(bill => {
+      const card = document.createElement("div");
+      card.className = "bill-card bill-status-" + (bill.status || "pending");
+      card.style.cssText = "padding:12px 14px;border:1px solid var(--surface-border);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--surface-soft)";
 
-      var info = document.createElement("div");
-      info.className = "bill-card-info";
+      const topRow = document.createElement("div");
+      topRow.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;gap:8px";
 
-      var strong = document.createElement("strong");
-      strong.textContent = bill.eventName || bill.eventClientId || "—";
-      info.appendChild(strong);
+      const info = document.createElement("div");
+      const nameEl = document.createElement("strong");
+      nameEl.style.display = "block";
+      nameEl.textContent = bill.eventName || bill.eventClientId;
+      const eventMetaEl = document.createElement("span");
+      eventMetaEl.style.cssText = "display:block;font-size:0.76rem;color:var(--muted);margin-top:2px";
+      eventMetaEl.textContent = ODC.eventContextText({ date: bill.eventDate, pax: bill.eventPax, costPerPax: bill.eventCostPerPax });
+      const metaEl = document.createElement("span");
+      metaEl.style.cssText = "display:block;font-size:0.78rem;color:var(--muted);margin-top:2px";
+      metaEl.textContent = [bill.headName, bill.personName, bill.category].filter(Boolean).join(" · ");
+      info.append(nameEl, eventMetaEl, metaEl);
+      topRow.append(info);
 
-      var metaSpan = document.createElement("span");
-      metaSpan.className = "bill-meta";
-      metaSpan.textContent = bill.personName + " · " + (headMap[bill.headId] ? headMap[bill.headId].name : (bill.headId || "Direct")) + " · " + bill.category;
-      info.appendChild(metaSpan);
-
-      var amountDiv = document.createElement("div");
-      amountDiv.className = "bill-card-amount";
-      amountDiv.textContent = "₹" + Number(bill.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 });
-
-      var badge = document.createElement("span");
-      badge.className = "bill-status-badge bill-status-badge-" + bill.status;
-      badge.textContent = bill.status.charAt(0).toUpperCase() + bill.status.slice(1);
-
-      head.appendChild(info);
-      head.appendChild(amountDiv);
-      head.appendChild(badge);
-      card.appendChild(head);
+      const rightCol = document.createElement("div");
+      rightCol.style.cssText = "text-align:right;flex-shrink:0";
+      const amtEl = document.createElement("strong");
+      amtEl.style.fontSize = "0.95rem";
+      amtEl.textContent = money.format(bill.amount || 0);
+      const statusBadge = document.createElement("span");
+      statusBadge.style.cssText = "display:block;font-size:0.72rem;font-weight:700;text-transform:uppercase;margin-top:2px";
+      statusBadge.style.color = bill.status === "approved" ? "var(--accent)" : bill.status === "rejected" ? "#dc2626" : "var(--muted)";
+      statusBadge.textContent = bill.status || "pending";
+      rightCol.append(amtEl, statusBadge);
+      topRow.append(rightCol);
+      card.append(topRow);
 
       if (bill.description) {
-        var descP = document.createElement("p");
-        descP.className = "bill-desc";
-        descP.textContent = bill.description;
-        card.appendChild(descP);
+        const descEl = document.createElement("p");
+        descEl.style.cssText = "font-size:0.8rem;margin-top:6px;color:var(--ink)";
+        descEl.textContent = bill.description;
+        card.append(descEl);
       }
 
-      var metaDiv = document.createElement("div");
-      metaDiv.className = "bill-card-meta";
-      var dt = bill.submittedAt ? new Date(bill.submittedAt).toLocaleString("en-IN") : "";
-      metaDiv.textContent = dt + (bill.reviewedBy ? " · Reviewed by " + bill.reviewedBy : "");
-      card.appendChild(metaDiv);
-
-      if (user && user.role === "admin" && bill.status === "pending") {
-        var actions = document.createElement("div");
-        actions.className = "bill-card-actions";
-        ["approved", "rejected"].forEach(function (status) {
-          var btn = document.createElement("button");
-          btn.className = status === "approved" ? "btn-approve" : "btn-reject";
-          btn.type = "button";
-          btn.textContent = status === "approved" ? "Approve" : "Reject";
-          btn.dataset.billId = bill.id;
-          btn.dataset.billAction = status;
-          actions.appendChild(btn);
-        });
-        card.appendChild(actions);
-      }
-      container.appendChild(card);
-    });
-  }
-
-  function setupBillsListDelegate() {
-    document.getElementById("billsList").addEventListener("click", function (e) {
-      var btn = e.target.closest("[data-bill-action]");
-      if (!btn) return;
-      btn.disabled = true;
-      fetch("/api/bills/" + btn.dataset.billId, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ status: btn.dataset.billAction })
-      }).then(function (r) { return r.json(); })
-        .then(function (d) { if (d.ok) loadBills(); else btn.disabled = false; })
-        .catch(function () { btn.disabled = false; });
-    });
-  }
-
-  /* ================================================================
-   * Submit
-   * ================================================================ */
-  function setupSubmitBtn() {
-    document.getElementById("billSubmitBtn").addEventListener("click", function () {
-      var errEl = document.getElementById("billError");
-      var okEl  = document.getElementById("billSuccess");
-      var btn   = this;
-      errEl.hidden = true;
-      okEl.hidden  = true;
-
-      var eventId     = document.getElementById("billEvent").value;
-      var headId      = document.getElementById("billHead").value;
-      var personName  = getPersonName();
-      var amount      = Number(document.getElementById("billAmount").value);
-      var category    = document.getElementById("billCategory").value;
-      var description = document.getElementById("billDescription").value.trim();
-      var ev          = allEvents.find(function (e) { return e.id === eventId; });
-
-      if (!eventId || !personName || !(amount > 0)) {
-        errEl.textContent = "Event, your name, and amount > 0 are required.";
-        errEl.hidden = false;
-        return;
+      if (bill.receiptDriveUrl) {
+        const receiptLink = document.createElement("a");
+        receiptLink.className = "bill-receipt-link";
+        receiptLink.href = bill.receiptDriveUrl;
+        receiptLink.target = "_blank";
+        receiptLink.rel = "noopener";
+        receiptLink.textContent = "Receipt: " + (bill.receiptFileName || "Open in Drive");
+        card.append(receiptLink);
       }
 
-      btn.disabled = true;
-      btn.textContent = "Submitting…";
+      const dateEl = document.createElement("p");
+      dateEl.style.cssText = "font-size:0.75rem;color:var(--muted);margin-top:4px";
+      dateEl.textContent = bill.submittedAt ? new Date(bill.submittedAt).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" }) : "";
+      if (bill.reviewedBy) dateEl.textContent += " · Reviewed by " + bill.reviewedBy;
+      card.append(dateEl);
 
-      fetch("/api/bills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          eventId: eventId,
-          eventName: ev ? ev.name : "",
-          headId: headId || "direct",
-          personName: personName,
-          amount: amount,
-          category: category,
-          description: description
-        })
-      })
-        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-        .then(function (res) {
-          btn.disabled = false;
-          btn.textContent = "Submit Bill";
-          if (res.ok) {
-            okEl.textContent = "Bill submitted! ₹" + amount.toLocaleString("en-IN") + " — " + category;
-            okEl.hidden = false;
-            document.getElementById("billEvent").value = "";
-            document.getElementById("billHead").innerHTML = '<option value="">— Select head (from petty cash) —</option>';
-            document.getElementById("billPerson").style.display = "none";
-            document.getElementById("billPersonText").value = "";
-            document.getElementById("billAmount").value = "";
-            document.getElementById("billDescription").value = "";
-            document.getElementById("billCategory").value = "misc";
-            document.getElementById("ocrStatus").textContent = "";
-            document.getElementById("ocrResult").hidden = true;
+      if (isAdmin && bill.status === "pending") {
+        const actRow = document.createElement("div");
+        actRow.style.cssText = "display:flex;gap:8px;margin-top:8px";
+
+        const approveBtn = document.createElement("button");
+        approveBtn.type = "button";
+        approveBtn.className = "primary-button";
+        approveBtn.style.cssText = "font-size:0.75rem;padding:4px 10px";
+        approveBtn.textContent = "Approve";
+        approveBtn.addEventListener("click", async () => {
+          approveBtn.disabled = true;
+          rejectBtn.disabled = true;
+          try {
+            await apiFetch("PUT", "/api/bills/" + bill.id, { status: "approved" });
             loadBills();
-          } else {
-            errEl.textContent = res.data.error || "Submission failed.";
-            errEl.hidden = false;
-          }
-        })
-        .catch(function () {
-          btn.disabled = false;
-          btn.textContent = "Submit Bill";
-          errEl.textContent = "Network error.";
-          errEl.hidden = false;
+          } catch (err) { alert("Error: " + err.message); approveBtn.disabled = false; rejectBtn.disabled = false; }
         });
-    });
-  }
 
-  /* ================================================================
-   * Admin: Users management (unchanged)
-   * ================================================================ */
-  function loadUsers() {
-    fetch("/api/auth/users", { credentials: "same-origin" })
-      .then(function (r) { return r.json(); })
-      .then(renderUsers)
-      .catch(function () {});
-  }
+        const rejectBtn = document.createElement("button");
+        rejectBtn.type = "button";
+        rejectBtn.className = "secondary-button danger";
+        rejectBtn.style.cssText = "font-size:0.75rem;padding:4px 10px";
+        rejectBtn.textContent = "Reject";
+        rejectBtn.addEventListener("click", async () => {
+          approveBtn.disabled = true;
+          rejectBtn.disabled = true;
+          try {
+            await apiFetch("PUT", "/api/bills/" + bill.id, { status: "rejected" });
+            loadBills();
+          } catch (err) { alert("Error: " + err.message); approveBtn.disabled = false; rejectBtn.disabled = false; }
+        });
 
-  function renderUsers(users) {
-    var container = document.getElementById("usersList");
-    if (!container) return;
-    container.innerHTML = "";
-    if (!users || !users.length) return;
-    var table = document.createElement("table");
-    table.className = "users-table";
-    table.innerHTML = "<thead><tr><th>Username</th><th>Full Name</th><th>Role</th><th>Created</th><th></th></tr></thead>";
-    var tbody = document.createElement("tbody");
-    users.forEach(function (u) {
-      var tr = document.createElement("tr");
-      tr.innerHTML =
-        "<td>" + esc(u.username) + "</td><td>" + esc(u.fullName || "—") + "</td><td>" + esc(u.role) + "</td>" +
-        "<td style='font-size:.8rem;color:var(--muted)'>" + esc((u.createdAt || "").split("T")[0]) + "</td>";
-      var td = document.createElement("td");
-      if (u.username !== "aiops") {
-        var db = document.createElement("button");
-        db.className = "secondary-button"; db.type = "button"; db.textContent = "Delete";
-        db.style.cssText = "font-size:.78rem;padding:3px 10px";
-        db.dataset.delUser = u.username;
-        td.appendChild(db);
+        actRow.append(approveBtn, rejectBtn);
+        card.append(actRow);
       }
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
-    container.addEventListener("click", function (e) {
-      var btn = e.target.closest("[data-del-user]");
-      if (!btn) return;
-      if (!confirm("Delete user " + btn.dataset.delUser + "?")) return;
-      btn.disabled = true;
-      fetch("/api/auth/users/" + encodeURIComponent(btn.dataset.delUser), { method: "DELETE", credentials: "same-origin" })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { if (d.ok) loadUsers(); else btn.disabled = false; })
-        .catch(function () { btn.disabled = false; });
-    });
-  }
 
-  function setupAddUserBtn() {
-    var ab = document.getElementById("addUserBtn");
-    if (!ab) return;
-    ab.addEventListener("click", function () {
-      var errEl = document.getElementById("userError");
-      var okEl  = document.getElementById("userSuccess");
-      errEl.hidden = true; okEl.hidden = true;
-      var username = document.getElementById("newUsername").value.trim();
-      var fullName = document.getElementById("newFullName").value.trim();
-      var password = document.getElementById("newPassword").value;
-      var role     = document.getElementById("newRole").value;
-      if (!username || !password) { errEl.textContent = "Username and password required."; errEl.hidden = false; return; }
-      ab.disabled = true; ab.textContent = "Adding…";
-      fetch("/api/auth/users", {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
-        body: JSON.stringify({ username: username, fullName: fullName, password: password, role: role })
-      }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-        .then(function (res) {
-          ab.disabled = false; ab.textContent = "Add User";
-          if (res.ok) { okEl.textContent = "User " + username + " added."; okEl.hidden = false; document.getElementById("newUsername").value = ""; document.getElementById("newFullName").value = ""; document.getElementById("newPassword").value = ""; loadUsers(); }
-          else { errEl.textContent = res.data.error || "Failed."; errEl.hidden = false; }
-        }).catch(function () { ab.disabled = false; ab.textContent = "Add User"; errEl.textContent = "Network error."; errEl.hidden = false; });
+      listEl.append(card);
     });
+  } catch (err) {
+    statusEl.textContent = "Error: " + err.message;
+    statusEl.className = "form-status error";
+  } finally {
+    billsLoading = false;
   }
+}
 
-  ODC.ready.then(init);
-}());
+document.getElementById("billRefresh").addEventListener("click", loadBills);
+
+async function loadBillSubmissionPage() {
+  try {
+    const [events, masterPersons] = await Promise.all([
+      ODC.api("GET", "/api/events"),
+      ODC.api("GET", "/api/master-persons")
+    ]);
+    buildForm(events || [], masterPersons || []);
+  } catch (err) {
+    document.getElementById("billForm").textContent = "Failed to load form data: " + err.message;
+  }
+  loadBills();
+}
+
+ODC.ready.then(loadBillSubmissionPage);
+ODC.registerSync(() => {
+  if (document.hidden) return;
+  const active = document.activeElemen

@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node smoke-test.js"
+    "test": "node smoke-test.js",
+    "google:status": "node setup-google-sheets.js --status",
+    "google:setup": "node setup-google-sheets.js",
+    "google:sync": "node setup-google-sheets.js --sync"
   },
   "engines": {
     "node": ">=22.5.0"

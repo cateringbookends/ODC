@@ -1,0 +1,12 @@
+apps-script/
+scripts/
+node_modules/
+odc.db*
+*.xlsx
+*.xls
+*.csv
+google-sync-config.json
+*.log
+output/
+verify-screenshots/
+.playwright-cli/

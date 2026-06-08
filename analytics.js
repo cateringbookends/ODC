@@ -1,295 +1,415 @@
-"use strict";
-(function () {
-  var allEvents = [], allBills = [], allPreCost = {}, allPettyCash = {}, heads = [];
-  var filtered = [];
-  var activeGroup = "month";
+/* =========================================================
+   analytics.js  v7 — multi-dimension analytics with Chart.js
+   ========================================================= */
 
-  var fmt = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
-  var fmtN = (n) => fmt.format(n || 0);
-  var fmtPct = (n) => (n >= 0 ? "+" : "") + (n || 0).toFixed(1) + "%";
+const AN = {
+  money:   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+  compact: new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }),
+  num:  (v) => Number(v) || 0,
+  pct:  (n, d) => d ? Math.round((n / d) * 100) : 0,
+  esc:  (v) => ODC.escapeHtml(v == null ? "" : String(v)),
+  titleCase: (v) => String(v || "Unknown").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+};
 
-  /* ---- Init ---- */
-  function init() {
-    setDefaultDates();
-    loadData().then(function () {
-      populateDeptFilter();
-      applyFilters();
-      bindEvents();
+const statusEl  = document.getElementById("analyticsStatus");
+const contentEl = document.getElementById("analyticsContent");
+
+let allEvents    = [];
+let filterMode   = "all";
+let customFrom   = "";
+let customTo     = "";
+let chartInstances = {};
+let filterBarEl  = null;
+
+function applyDateFilter(events) {
+  const today = new Date();
+  let from = null, to = null;
+  if (filterMode === "3m") { from = new Date(today); from.setMonth(from.getMonth() - 3); }
+  else if (filterMode === "6m") { from = new Date(today); from.setMonth(from.getMonth() - 6); }
+  else if (filterMode === "1y") { from = new Date(today); from.setFullYear(from.getFullYear() - 1); }
+  else if (filterMode === "custom") {
+    if (customFrom) from = new Date(customFrom);
+    if (customTo)   to   = new Date(customTo);
+  }
+  if (!from && !to) return events;
+  return events.filter((ev) => {
+    if (!ev.date) return false;
+    const d = new Date(ev.date);
+    if (from && d < from) return false;
+    if (to   && d > to)   return false;
+    return true;
+  });
+}
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = url;
+    s.onload  = resolve;
+    s.onerror = () => reject(new Error("Failed to load: " + url));
+    document.head.appendChild(s);
+  });
+}
+function loadChartJs() { return window.Chart ? Promise.resolve() : loadScript("https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"); }
+function loadSheetJs() { return window.XLSX  ? Promise.resolve() : loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"); }
+
+function monthLabel(key) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1).toLocaleString("en-IN", { month: "short", year: "2-digit" });
+}
+
+function groupBy(arr, keyFn) {
+  const out = {};
+  arr.forEach((item) => {
+    const key = keyFn(item) || "Unknown";
+    if (!out[key]) out[key] = { count: 0, billing: 0, pax: 0 };
+    out[key].count++;
+    out[key].billing += AN.num(item.totalBilling);
+    out[key].pax     += AN.num(item.pax);
+  });
+  return out;
+}
+
+function destroyChart(id) {
+  if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+}
+
+function makeChart(id, config) {
+  destroyChart(id);
+  const canvas = document.getElementById(id);
+  if (!canvas || !window.Chart) return;
+  chartInstances[id] = new Chart(canvas.getContext("2d"), config);
+}
+
+const C = {
+  blue:   "#2563eb", purple: "#7c3aed", green:  "#059669", amber:  "#d97706",
+  red:    "#dc2626", slate:  "#64748b", teal:   "#0891b2", pink:   "#db2777",
+  palette: ["#2563eb","#7c3aed","#059669","#d97706","#0891b2","#db2777","#dc2626","#64748b"],
+  status: { open: "#2563eb", planning: "#7c3aed", completed: "#059669", cancelled: "#64748b" },
+};
+
+const CD = { responsive: true, maintainAspectRatio: false, animation: { duration: 400 }, plugins: { legend: { labels: { font: { size: 11 }, padding: 12 } } } };
+
+function buildFilterBar() {
+  const bar = document.createElement("div");
+  bar.className = "an-filter-bar";
+  bar.innerHTML =
+    '<div class="an-filter-pills">' +
+      '<button class="an-pill an-pill-active" data-mode="all">All Time</button>' +
+      '<button class="an-pill" data-mode="3m">Last 3M</button>' +
+      '<button class="an-pill" data-mode="6m">Last 6M</button>' +
+      '<button class="an-pill" data-mode="1y">Last 1Y</button>' +
+      '<button class="an-pill" data-mode="custom">Custom</button>' +
+    '</div>' +
+    '<div class="an-custom-range" id="anCustomRange" hidden>' +
+      '<label class="an-range-label">From <input type="date" id="anFrom" class="an-date-input"></label>' +
+      '<span class="an-range-sep">-</span>' +
+      '<label class="an-range-label">To <input type="date" id="anTo" class="an-date-input"></label>' +
+      '<button class="primary-button an-apply-btn" id="anApply">Apply</button>' +
+    '</div>' +
+    '<div class="an-export-btns">' +
+      '<span class="an-export-label">Export:</span>' +
+      '<button class="secondary-button an-export-btn" id="exportCsv">CSV</button>' +
+      '<button class="secondary-button an-export-btn" id="exportXlsx">XLSX</button>' +
+      '<button class="secondary-button an-export-btn" id="exportPdf">PDF</button>' +
+    '</div>';
+
+  bar.querySelectorAll(".an-pill").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      bar.querySelectorAll(".an-pill").forEach(function(b) { b.classList.remove("an-pill-active"); });
+      btn.classList.add("an-pill-active");
+      filterMode = btn.dataset.mode;
+      var range = document.getElementById("anCustomRange");
+      if (range) range.hidden = filterMode !== "custom";
+      if (filterMode !== "custom") render(allEvents);
+    });
+  });
+  return bar;
+}
+
+function buildShell(total) {
+  return '<div class="an-page-header"><div>' +
+    '<p class="eyebrow">Operational Analytics</p>' +
+    '<h1 class="an-page-title">Event Intelligence</h1>' +
+    '<p class="an-page-sub">' + total + ' event' + (total !== 1 ? "s" : "") + ' in selected range</p>' +
+    '</div></div>' +
+    '<div class="an-kpi-grid" id="anKpiGrid"></div>' +
+    '<div class="an-chart-row">' +
+      '<div class="an-chart-card an-chart-wide"><div class="an-chart-head"><p class="eyebrow">Revenue</p><h2>Monthly Billing Trend</h2></div><div class="an-chart-body"><canvas id="chartRevenue"></canvas></div></div>' +
+      '<div class="an-chart-card"><div class="an-chart-head"><p class="eyebrow">Pipeline</p><h2>Status Distribution</h2></div><div class="an-chart-body an-doughnut-body"><canvas id="chartStatus"></canvas></div></div>' +
+    '</div>' +
+    '<div class="an-chart-row">' +
+      '<div class="an-chart-card"><div class="an-chart-head"><p class="eyebrow">Scale</p><h2>PAX Size Buckets</h2></div><div class="an-chart-body"><canvas id="chartPax"></canvas></div></div>' +
+      '<div class="an-chart-card"><div class="an-chart-head"><p class="eyebrow">Value</p><h2>Billing Tier Mix</h2></div><div class="an-chart-body an-doughnut-body"><canvas id="chartBillingTier"></canvas></div></div>' +
+      '<div class="an-chart-card"><div class="an-chart-head"><p class="eyebrow">Menu</p><h2>Food Preference</h2></div><div class="an-chart-body"><canvas id="chartFood"></canvas></div></div>' +
+    '</div>' +
+    '<div class="an-chart-row">' +
+      '<div class="an-chart-card an-chart-wide"><div class="an-chart-head"><p class="eyebrow">Volume</p><h2>Monthly Count &amp; Avg Revenue</h2></div><div class="an-chart-body an-chart-body-tall"><canvas id="chartMonthCount"></canvas></div></div>' +
+      '<div class="an-chart-card"><div class="an-chart-head"><p class="eyebrow">Geography</p><h2>Zone Billing</h2></div><div class="an-chart-body"><canvas id="chartZone"></canvas></div></div>' +
+    '</div>' +
+    '<div class="an-table-card" id="anOverdueSection" style="display:none"><div class="an-chart-head"><p class="eyebrow">Risk</p><h2>Overdue Payment Cycles</h2></div><div id="anOverdueBody"></div></div>' +
+    '<div class="an-table-card"><div class="an-chart-head"><p class="eyebrow">Leaderboard</p><h2>Top 20 Events by Billing</h2></div><div id="anTopBody"></div></div>';
+}
+
+function render(events) {
+  var filtered = applyDateFilter(events);
+  statusEl.hidden = true;
+  contentEl.innerHTML = buildShell(filtered.length);
+  buildKpis(filtered);
+  buildRevenueChart(filtered);
+  buildStatusChart(filtered);
+  buildPaxChart(filtered);
+  buildBillingTierChart(filtered);
+  buildFoodChart(filtered);
+  buildMonthCountChart(filtered);
+  buildZoneChart(filtered);
+  buildOverdueTable(filtered);
+  buildTopEventsTable(filtered);
+  bindExport(filtered);
+  var applyBtn = document.getElementById("anApply");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", function() {
+      customFrom = (document.getElementById("anFrom") || {}).value || "";
+      customTo   = (document.getElementById("anTo")   || {}).value || "";
+      render(allEvents);
     });
   }
+}
 
-  function setDefaultDates() {
-    var now = new Date();
-    var y = now.getFullYear();
-    var m = String(now.getMonth() + 1).padStart(2, "0");
-    document.getElementById("filterTo").value = y + "-" + m;
-    var past = new Date(now);
-    past.setMonth(past.getMonth() - 5);
-    document.getElementById("filterFrom").value =
-      past.getFullYear() + "-" + String(past.getMonth() + 1).padStart(2, "0");
-  }
+function buildKpis(filtered) {
+  var grid = document.getElementById("anKpiGrid");
+  if (!grid) return;
+  var totalBilling = filtered.reduce(function(s, e) { return s + AN.num(e.totalBilling); }, 0);
+  var totalPax     = filtered.reduce(function(s, e) { return s + AN.num(e.pax); }, 0);
+  var completed    = filtered.filter(function(e) { return e.status === "completed"; });
+  var active       = filtered.filter(function(e) { return e.status === "open" || e.status === "planning"; });
+  var cancelled    = filtered.filter(function(e) { return e.status === "cancelled"; });
+  var today        = new Date().toISOString().slice(0, 10);
+  var overdueCycles = filtered.reduce(function(acc, e) {
+    (e.paymentSchedule || []).forEach(function(c) { if (c.dueDate && c.dueDate < today) acc.push(c); });
+    return acc;
+  }, []);
+  var overdueAmt  = overdueCycles.reduce(function(s, c) { return s + AN.num(c.amount); }, 0);
+  var activeBilling = active.reduce(function(s, e) { return s + AN.num(e.totalBilling); }, 0);
+  var avgPax     = filtered.length ? Math.round(totalPax / filtered.length) : 0;
+  var avgBilling = filtered.length ? Math.round(totalBilling / filtered.length) : 0;
 
-  async function loadData() {
-    try {
-      allEvents = await ODC.api("GET", "/api/events") || [];
-      allBills  = await ODC.api("GET", "/api/bills") || [];
-      heads     = (await ODC.api("GET", "/api/master-persons")) || [];
+  grid.innerHTML = [
+    kpi("Total Billing",    AN.money.format(totalBilling),  filtered.length + " events in range",          ""),
+    kpi("Avg / Event",      AN.money.format(avgBilling),    "average billing per event",                   ""),
+    kpi("Total PAX",        totalPax.toLocaleString("en-IN"), avgPax + " avg per event",                   ""),
+    kpi("Avg PAX / Event",  String(avgPax),                 "average headcount",                           ""),
+    kpi("Completion Rate",  AN.pct(completed.length, filtered.length) + "%", completed.length + " of " + filtered.length + " completed", completed.length > 0 ? "good" : ""),
+    kpi("Active Pipeline",  AN.money.format(activeBilling), active.length + " active events",              active.length > 0 ? "focus" : ""),
+    kpi("Overdue Exposure", AN.money.format(overdueAmt),    overdueCycles.length + " overdue cycles",     overdueAmt > 0 ? "risk" : "ok"),
+    kpi("Cancelled",        String(cancelled.length),       AN.pct(cancelled.length, filtered.length) + "% of total", cancelled.length > 0 ? "muted" : "ok"),
+  ].join("");
+}
 
-      // Pre-cost per event — fetched in parallel
-      await Promise.all(allEvents.map(async function (ev) {
-        try {
-          allPreCost[ev.id] = await ODC.api("GET", "/api/events/" + encodeURIComponent(ev.id) + "/pre-cost");
-        } catch { allPreCost[ev.id] = null; }
-      }));
-    } catch (e) {
-      console.error("Analytics data load:", e);
+function kpi(label, value, sub, tone) {
+  return '<div class="an-kpi' + (tone ? " an-kpi-" + tone : "") + '">' +
+    '<span class="an-kpi-label">' + AN.esc(label) + '</span>' +
+    '<strong class="an-kpi-value">' + AN.esc(value) + '</strong>' +
+    '<span class="an-kpi-sub">' + AN.esc(sub) + '</span>' +
+    '</div>';
+}
+
+function buildRevenueChart(events) {
+  var byMonth = groupBy(events.filter(function(e) { return !!e.date; }), function(e) { return e.date.slice(0, 7); });
+  var months  = Object.keys(byMonth).sort().slice(-18);
+  makeChart("chartRevenue", {
+    type: "bar",
+    data: { labels: months.map(monthLabel), datasets: [{ label: "Monthly Billing", data: months.map(function(m) { return byMonth[m].billing; }), backgroundColor: C.blue + "bb", borderColor: C.blue, borderWidth: 1, borderRadius: 5 }] },
+    options: { ...CD, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return AN.money.format(ctx.raw); } } } }, scales: { y: { ticks: { callback: function(v) { return AN.compact.format(v); } }, grid: { color: "rgba(0,0,0,0.05)" } }, x: { grid: { display: false } } } }
+  });
+}
+
+function buildStatusChart(events) {
+  var byStatus = groupBy(events, function(e) { return e.status || "open"; });
+  var labels   = Object.keys(byStatus);
+  makeChart("chartStatus", {
+    type: "doughnut",
+    data: { labels: labels.map(AN.titleCase), datasets: [{ data: labels.map(function(l) { return byStatus[l].count; }), backgroundColor: labels.map(function(l) { return C.status[l] || C.slate; }), borderWidth: 2, borderColor: "#fff" }] },
+    options: { ...CD, cutout: "68%", plugins: { legend: { position: "bottom", labels: { padding: 14, font: { size: 11 } } }, tooltip: { callbacks: { label: function(ctx) { return ctx.label + ": " + ctx.raw + " events"; } } } } }
+  });
+}
+
+function buildPaxChart(events) {
+  var buckets = { "< 50": 0, "50-100": 0, "101-200": 0, "201-500": 0, "500+": 0 };
+  events.forEach(function(e) {
+    var p = AN.num(e.pax);
+    if (p < 50) buckets["< 50"]++; else if (p <= 100) buckets["50-100"]++; else if (p <= 200) buckets["101-200"]++; else if (p <= 500) buckets["201-500"]++; else buckets["500+"]++;
+  });
+  makeChart("chartPax", {
+    type: "bar",
+    data: { labels: Object.keys(buckets), datasets: [{ label: "Events", data: Object.values(buckets), backgroundColor: C.palette.slice(0,5).map(function(c){return c+"bb";}), borderColor: C.palette.slice(0,5), borderWidth: 1, borderRadius: 4 }] },
+    options: { ...CD, indexAxis: "y", plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return ctx.raw + " events"; } } } }, scales: { x: { ticks: { stepSize: 1 }, grid: { color: "rgba(0,0,0,0.05)" } }, y: { grid: { display: false } } } }
+  });
+}
+
+function buildBillingTierChart(events) {
+  var tiers = { "< 1L": 0, "1L-5L": 0, "5L-10L": 0, "10L+": 0 };
+  events.forEach(function(e) {
+    var b = AN.num(e.totalBilling);
+    if (b < 100000) tiers["< 1L"]++; else if (b < 500000) tiers["1L-5L"]++; else if (b < 1000000) tiers["5L-10L"]++; else tiers["10L+"]++;
+  });
+  makeChart("chartBillingTier", {
+    type: "doughnut",
+    data: { labels: Object.keys(tiers), datasets: [{ data: Object.values(tiers), backgroundColor: [C.slate+"cc", C.blue+"cc", C.purple+"cc", C.green+"cc"], borderWidth: 2, borderColor: "#fff" }] },
+    options: { ...CD, cutout: "68%", plugins: { legend: { position: "bottom", labels: { padding: 14, font: { size: 11 } } }, tooltip: { callbacks: { label: function(ctx) { return ctx.label + ": " + ctx.raw + " events"; } } } } }
+  });
+}
+
+function buildFoodChart(events) {
+  var byFood = groupBy(events, function(e) { return e.foodType || "not-set"; });
+  var labels = Object.keys(byFood);
+  makeChart("chartFood", {
+    type: "bar",
+    data: { labels: labels.map(AN.titleCase), datasets: [{ label: "Events", data: labels.map(function(l){return byFood[l].count;}), backgroundColor: [C.green+"bb",C.amber+"bb",C.purple+"bb",C.slate+"bb"], borderColor: [C.green,C.amber,C.purple,C.slate], borderWidth: 1, borderRadius: 4 }] },
+    options: { ...CD, indexAxis: "y", plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return ctx.raw + " events"; } } } }, scales: { x: { ticks: { stepSize: 1 }, grid: { color: "rgba(0,0,0,0.05)" } }, y: { grid: { display: false } } } }
+  });
+}
+
+function buildMonthCountChart(events) {
+  var byMonth = groupBy(events.filter(function(e){return !!e.date;}), function(e){return e.date.slice(0,7);});
+  var months  = Object.keys(byMonth).sort().slice(-18);
+  makeChart("chartMonthCount", {
+    type: "bar",
+    data: {
+      labels: months.map(monthLabel),
+      datasets: [
+        { type: "bar",  label: "Event Count", data: months.map(function(m){return byMonth[m].count;}),   backgroundColor: C.purple+"88", borderColor: C.purple, borderWidth: 1, borderRadius: 4, yAxisID: "yCount" },
+        { type: "line", label: "Avg Billing",  data: months.map(function(m){return byMonth[m].count ? byMonth[m].billing/byMonth[m].count : 0;}), borderColor: C.amber, backgroundColor: C.amber+"22", borderWidth: 2, pointRadius: 4, pointBackgroundColor: C.amber, tension: 0.4, fill: true, yAxisID: "yAvg" }
+      ]
+    },
+    options: {
+      ...CD,
+      plugins: { legend: { position: "top", labels: { padding: 14, font: { size: 11 } } }, tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.yAxisID === "yAvg" ? AN.money.format(ctx.raw) : ctx.raw + " events"; } } } },
+      scales: { yCount: { position: "left", ticks: { stepSize: 1 }, grid: { color: "rgba(0,0,0,0.05)" } }, yAvg: { position: "right", ticks: { callback: function(v){return AN.compact.format(v);} }, grid: { drawOnChartArea: false } }, x: { grid: { display: false } } }
     }
+  });
+}
+
+function buildZoneChart(events) {
+  var byZone = groupBy(events, function(e){return e.locationZone || "not-set";});
+  var labels = Object.keys(byZone).sort(function(a,b){return byZone[b].billing-byZone[a].billing;});
+  makeChart("chartZone", {
+    type: "bar",
+    data: { labels: labels.map(AN.titleCase), datasets: [{ label: "Billing", data: labels.map(function(l){return byZone[l].billing;}), backgroundColor: C.teal+"bb", borderColor: C.teal, borderWidth: 1, borderRadius: 4 }] },
+    options: { ...CD, indexAxis: "y", plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx){return AN.money.format(ctx.raw);} } } }, scales: { x: { ticks: { callback: function(v){return AN.compact.format(v);} }, grid: { color: "rgba(0,0,0,0.05)" } }, y: { grid: { display: false } } } }
+  });
+}
+
+function buildOverdueTable(events) {
+  var body    = document.getElementById("anOverdueBody");
+  var section = document.getElementById("anOverdueSection");
+  if (!body || !section) return;
+  var today = new Date().toISOString().slice(0, 10);
+  var overdue = [];
+  events.forEach(function(e) {
+    (e.paymentSchedule || []).forEach(function(c) { if (c.dueDate && c.dueDate < today) overdue.push({ event: e, cycle: c }); });
+  });
+  overdue.sort(function(a,b){ return String(a.cycle.dueDate).localeCompare(String(b.cycle.dueDate)); });
+  if (!overdue.length) { section.style.display = "none"; return; }
+  section.style.display = "";
+  var total = overdue.reduce(function(s,item){return s+AN.num(item.cycle.amount);}, 0);
+  var rows = overdue.map(function(item) {
+    var ev = item.event; var cycle = item.cycle;
+    return '<tr><td>' + AN.esc(ev.name||ev.id) + '</td><td>' + AN.esc(cycle.label||"Payment") + '</td>' +
+      '<td class="bad-text">' + AN.esc(ODC.isoToDmy(cycle.dueDate)) + '</td>' +
+      '<td class="an-cell-money bad-text">' + AN.money.format(AN.num(cycle.amount)) + '</td>' +
+      '<td><span class="status-badge status-' + AN.esc(ev.status||"open") + '">' + AN.titleCase(ev.status||"open") + '</span></td>' +
+      '<td><a href="financial-control.html?event=' + encodeURIComponent(ev.id) + '" class="secondary-button an-table-link">View</a></td></tr>';
+  }).join("");
+  body.innerHTML = '<p class="an-overdue-total">Total overdue: <strong class="bad-text">' + AN.money.format(total) + '</strong> across ' + overdue.length + ' cycle' + (overdue.length!==1?"s":"") + '</p>' +
+    '<div class="responsive-table"><table class="dash-table"><thead><tr><th>Event</th><th>Cycle</th><th>Due Date</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function buildTopEventsTable(events) {
+  var body = document.getElementById("anTopBody");
+  if (!body) return;
+  var top = events.slice().sort(function(a,b){return AN.num(b.totalBilling)-AN.num(a.totalBilling);}).slice(0,20);
+  if (!top.length) { body.innerHTML = '<p class="form-status">No events in this range.</p>'; return; }
+  var rows = top.map(function(e,i) {
+    return '<tr><td class="an-rank">'+(i+1)+'</td>' +
+      '<td>'+AN.esc(e.name||e.id)+'</td>' +
+      '<td>'+AN.esc(ODC.isoToDmy(e.date||""))+'</td>' +
+      '<td class="an-cell-num">'+AN.esc(String(e.pax||"—"))+'</td>' +
+      '<td>'+AN.esc(AN.titleCase(e.locationZone||e.location||"unknown"))+'</td>' +
+      '<td class="an-cell-money">'+AN.money.format(AN.num(e.totalBilling))+'</td>' +
+      '<td><span class="status-badge status-'+AN.esc(e.status||"open")+'">'+AN.titleCase(e.status||"open")+'</span></td>' +
+      '<td><a href="financial-control.html?event='+encodeURIComponent(e.id)+'" class="secondary-button an-table-link">View</a></td></tr>';
+  }).join("");
+  body.innerHTML = '<div class="responsive-table"><table class="dash-table"><thead><tr><th>#</th><th>Event</th><th>Date</th><th>PAX</th><th>Zone</th><th>Billing</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+function toExportRows(events) {
+  return events.map(function(e) {
+    return {
+      "Event ID": e.externalId||e.id||"", "Event Name": e.name||"", "Date": ODC.isoToDmy(e.date||""),
+      "PAX": AN.num(e.pax), "Days": AN.num(e.days)||1, "Cost/PAX": AN.num(e.costPerPax),
+      "Total Billing (INR)": AN.num(e.totalBilling), "Status": e.status||"open",
+      "Zone": e.locationZone||"", "Location": e.location||"", "Food Type": e.foodType||"",
+      "Scheduled (INR)": (e.paymentSchedule||[]).reduce(function(s,c){return s+AN.num(c.amount);},0)
+    };
+  });
+}
+
+function exportCsv(events) {
+  var rows = toExportRows(events);
+  if (!rows.length) return;
+  var headers = Object.keys(rows[0]);
+  var csv = [headers.join(",")].concat(rows.map(function(r) {
+    return headers.map(function(h) { return '"'+String(r[h]).replace(/"/g,'""')+'"'; }).join(",");
+  })).join("\n");
+  var blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a"); a.href = url; a.download = "odc-analytics.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportXlsx(events) {
+  var btn = document.getElementById("exportXlsx");
+  var orig = btn ? btn.textContent : "XLSX";
+  if (btn) btn.textContent = "Loading...";
+  try {
+    await loadSheetJs();
+    var rows = toExportRows(events);
+    var ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = Object.keys(rows[0]||{}).map(function(k){ return { wch: Math.max(k.length,12) }; });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Analytics");
+    XLSX.writeFile(wb, "odc-analytics.xlsx");
+  } catch(err) { alert("XLSX export failed: " + err.message); }
+  finally { if (btn) btn.textContent = orig; }
+}
+
+function exportPdf() { window.print(); }
+
+function bindExport(events) {
+  var c = document.getElementById("exportCsv");
+  var x = document.getElementById("exportXlsx");
+  var p = document.getElementById("exportPdf");
+  if (c) c.addEventListener("click", function(){ exportCsv(events); });
+  if (x) x.addEventListener("click", function(){ exportXlsx(events); });
+  if (p) p.addEventListener("click", exportPdf);
+}
+
+async function init() {
+  try { await loadChartJs(); }
+  catch(err) {
+    statusEl.textContent = "Charts unavailable (CDN unreachable). Tables still shown.";
+    statusEl.hidden = false;
   }
-
-  /* ---- Filters ---- */
-  function applyFilters() {
-    var from   = document.getElementById("filterFrom").value;
-    var to     = document.getElementById("filterTo").value;
-    var zone   = document.getElementById("filterZone").value;
-    var status = document.getElementById("filterStatus").value;
-    var dept   = document.getElementById("filterDept").value;
-
-    filtered = allEvents.filter(function (ev) {
-      var evMonth = (ev.date || "").slice(0, 7);
-      if (from && evMonth < from) return false;
-      if (to   && evMonth > to)   return false;
-      if (zone   && ev.locationZone !== zone)   return false;
-      if (status && ev.status      !== status)  return false;
-      if (dept) {
-        // Check if event has bills from this dept or petty cash from this dept
-        var hasDept = allBills.some(function (b) { return b.eventClientId === ev.id && b.headId === dept; });
-        if (!hasDept) return false;
-      }
-      return true;
-    });
-
-    renderSummary();
-    renderChart();
-    renderTable();
+  if (!filterBarEl) {
+    filterBarEl = buildFilterBar();
+    contentEl.parentNode.insertBefore(filterBarEl, contentEl);
   }
+  allEvents = getSavedEvents();
+  render(allEvents);
+}
 
-  /* ---- Summary cards ---- */
-  function renderSummary() {
-    var revenue = 0, cost = 0, bills = 0, events = filtered.length;
-    for (var ev of filtered) {
-      revenue += (ev.totalBilling || 0) / 1.05; // pre-GST revenue only
-      var pc = allPreCost[ev.id];
-      cost += (pc && pc.totalCost) ? pc.totalCost : 0;
-      bills += allBills
-        .filter(function (b) { return b.eventClientId === ev.id && b.status === "approved"; })
-        .reduce(function (s, b) { return s + (b.amount || 0); }, 0);
-    }
-    var totalCost = cost + bills;
-    var pl = revenue - totalCost;
-    var plPct = revenue > 0 ? (pl / revenue) * 100 : 0;
+function reload() { allEvents = getSavedEvents(); render(allEvents); }
 
-    var cards = [
-      { label: "Events", value: events, color: "#059669", raw: true },
-      { label: "Revenue (ex GST)", value: fmtN(revenue), color: "#3b82f6" },
-      { label: "Total Cost", value: fmtN(totalCost), color: "#f59e0b" },
-      { label: "Gross P&L", value: fmtN(pl), color: pl >= 0 ? "#059669" : "#dc2626" },
-      { label: "P&L %", value: fmtPct(plPct), color: plPct >= 0 ? "#059669" : "#dc2626" },
-      { label: "Approved Bills", value: fmtN(bills), color: "#8b5cf6" }
-    ];
-
-    var el = document.getElementById("summaryCards");
-    el.innerHTML = "";
-    for (var c of cards) {
-      el.innerHTML += '<div class="panel" style="text-align:center;padding:1rem">' +
-        '<div style="font-size:.78rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem">' + c.label + '</div>' +
-        '<div style="font-size:1.4rem;font-weight:800;color:' + c.color + '">' + c.value + '</div>' +
-        '</div>';
-    }
-  }
-
-  /* ---- Chart (pure SVG bar chart) ---- */
-  function renderChart() {
-    var groups = buildGroups();
-    var title  = { month: "Monthly Breakdown", zone: "Zone / Location Breakdown", dept: "Department Expenses", status: "By Status" }[activeGroup];
-    document.getElementById("chartTitle").textContent = title;
-
-    if (!groups.length) {
-      document.getElementById("chartArea").innerHTML = '<p class="empty-state">No data for selected filters.</p>';
-      return;
-    }
-
-    var W = Math.max(groups.length * 90 + 80, 400);
-    var H = 220;
-    var PAD = { t: 20, r: 20, b: 60, l: 70 };
-    var chartW = W - PAD.l - PAD.r;
-    var chartH = H - PAD.t - PAD.b;
-    var maxVal = Math.max(...groups.map(g => Math.max(g.revenue, g.cost)), 1);
-    var barW   = Math.min(chartW / groups.length * 0.35, 32);
-
-    function yScale(v) { return PAD.t + chartH - (v / maxVal) * chartH; }
-
-    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" style="font-family:system-ui,sans-serif">';
-
-    // Y axis gridlines + labels
-    for (var i = 0; i <= 4; i++) {
-      var yv = maxVal * i / 4;
-      var ypx = yScale(yv);
-      svg += '<line x1="' + PAD.l + '" y1="' + ypx + '" x2="' + (W - PAD.r) + '" y2="' + ypx + '" stroke="#e2e8f0" stroke-width="1"/>';
-      svg += '<text x="' + (PAD.l - 6) + '" y="' + (ypx + 4) + '" text-anchor="end" font-size="10" fill="#94a3b8">' + (yv >= 1000 ? Math.round(yv / 1000) + "k" : Math.round(yv)) + '</text>';
-    }
-
-    // Bars
-    groups.forEach(function (g, i) {
-      var x = PAD.l + (i + 0.5) * (chartW / groups.length);
-      var bx = x - barW;
-
-      // Revenue bar
-      var rh = (g.revenue / maxVal) * chartH;
-      svg += '<rect x="' + bx + '" y="' + yScale(g.revenue) + '" width="' + barW + '" height="' + rh + '" fill="#3b82f6" rx="3" opacity=".85" title="Revenue: ' + fmtN(g.revenue) + '"/>';
-
-      // Cost bar
-      if (g.cost > 0) {
-        var ch = (g.cost / maxVal) * chartH;
-        svg += '<rect x="' + (bx + barW + 3) + '" y="' + yScale(g.cost) + '" width="' + barW + '" height="' + ch + '" fill="#f59e0b" rx="3" opacity=".85" title="Cost: ' + fmtN(g.cost) + '"/>';
-      }
-
-      // Label
-      svg += '<text x="' + x + '" y="' + (H - PAD.b + 16) + '" text-anchor="middle" font-size="10" fill="#64748b">' + escX(g.label) + '</text>';
-    });
-
-    // Legend
-    svg += '<rect x="' + PAD.l + '" y="' + (H - 16) + '" width="10" height="10" fill="#3b82f6" rx="2"/>';
-    svg += '<text x="' + (PAD.l + 14) + '" y="' + (H - 7) + '" font-size="10" fill="#64748b">Revenue</text>';
-    svg += '<rect x="' + (PAD.l + 80) + '" y="' + (H - 16) + '" width="10" height="10" fill="#f59e0b" rx="2"/>';
-    svg += '<text x="' + (PAD.l + 94) + '" y="' + (H - 7) + '" font-size="10" fill="#64748b">Cost</text>';
-
-    svg += '</svg>';
-    document.getElementById("chartArea").innerHTML = svg;
-  }
-
-  function buildGroups() {
-    var map = {};
-
-    for (var ev of filtered) {
-      var key;
-      if      (activeGroup === "month")  key = (ev.date || "").slice(0, 7);
-      else if (activeGroup === "zone")   key = ev.locationZone || "unknown";
-      else if (activeGroup === "status") key = ev.status;
-      else if (activeGroup === "dept") {
-        var evBills = allBills.filter(function (b) { return b.eventClientId === ev.id && b.status === "approved"; });
-        var deptMap = {};
-        for (var b of evBills) {
-          deptMap[b.headId || "direct"] = (deptMap[b.headId || "direct"] || 0) + b.amount;
-        }
-        for (var dk in deptMap) {
-          var hname = (heads.find(function (h) { return h.id === dk; }) || { name: dk }).name;
-          if (!map[dk]) map[dk] = { label: hname, revenue: 0, cost: 0 };
-          map[dk].cost += deptMap[dk];
-        }
-        continue;
-      }
-      if (!key) continue;
-      if (!map[key]) map[key] = { label: activeGroup === "month" ? key : key.charAt(0).toUpperCase() + key.slice(1), revenue: 0, cost: 0 };
-      map[key].revenue += (ev.totalBilling || 0) / 1.05;
-      var pc = allPreCost[ev.id];
-      if (pc && pc.totalCost) map[key].cost += pc.totalCost;
-      map[key].cost += allBills
-        .filter(function (b) { return b.eventClientId === ev.id && b.status === "approved"; })
-        .reduce(function (s, b) { return s + (b.amount || 0); }, 0);
-    }
-
-    return Object.keys(map).sort().map(function (k) { return map[k]; });
-  }
-
-  /* ---- Detail table ---- */
-  function renderTable() {
-    var head = document.getElementById("detailHead");
-    var body = document.getElementById("detailBody");
-
-    head.innerHTML = '<tr>' + ["Event", "Date", "Location", "Zone", "PAX", "Billing", "Pre-Cost", "Bills", "P&L", "Status"].map(function (h) {
-      return '<th style="text-align:left;padding:8px 10px;font-size:.78rem;font-weight:600;color:var(--muted);border-bottom:1px solid var(--surface-border)">' + h + '</th>';
-    }).join("") + '</tr>';
-
-    var rows = filtered.map(function (ev) {
-      var pc    = allPreCost[ev.id];
-      var cost  = (pc && pc.totalCost) ? pc.totalCost : 0;
-      var bills = allBills.filter(function (b) { return b.eventClientId === ev.id && b.status === "approved"; })
-                          .reduce(function (s, b) { return s + (b.amount || 0); }, 0);
-      var pl    = (ev.totalBilling || 0) / 1.05 - cost - bills;
-      var plColor = pl >= 0 ? "#059669" : "#dc2626";
-      return '<tr data-event-id="' + encodeURIComponent(ev.id) + '" class="clickable-row" style="cursor:pointer">' +
-        td(ev.name) + td(ev.date || "") + td(ev.location) + td(ev.locationZone || "—") + td(ev.pax) +
-        td(fmtN(ev.totalBilling / 1.05)) + td(cost ? fmtN(cost) : "—") + td(bills ? fmtN(bills) : "—") +
-        '<td style="padding:8px 10px;color:' + plColor + ';font-weight:700">' + fmtN(pl) + '</td>' +
-        td(ev.status) + '</tr>';
-    }).join("");
-
-    body.innerHTML = rows || '<tr><td colspan="10" style="padding:2rem;text-align:center;color:var(--muted)">No events match filters.</td></tr>';
-  }
-
-  function td(v) { return '<td style="padding:8px 10px;border-bottom:1px solid var(--surface-border);font-size:.83rem">' + escX(v) + '</td>'; }
-  function escX(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
-
-  /* ---- Dept filter population ---- */
-  function populateDeptFilter() {
-    var sel = document.getElementById("filterDept");
-    for (var h of heads) {
-      sel.innerHTML += '<option value="' + escX(h.id) + '">' + escX(h.name) + '</option>';
-    }
-  }
-
-  /* ---- Events ---- */
-  function bindEvents() {
-    document.getElementById("applyFilters").addEventListener("click", applyFilters);
-    var detailBody = document.getElementById("detailBody");
-    detailBody.addEventListener("click", function (e) {
-      var row = e.target.closest("tr[data-event-id]");
-      if (row) window.location.href = "event-dashboard.html?id=" + row.dataset.eventId;
-    });
-    detailBody.addEventListener("mouseover", function (e) {
-      var row = e.target.closest("tr[data-event-id]");
-      if (row) row.style.background = "var(--surface-soft)";
-    });
-    detailBody.addEventListener("mouseout", function (e) {
-      var row = e.target.closest("tr[data-event-id]");
-      if (row) row.style.background = "";
-    });
-    document.getElementById("resetFilters").addEventListener("click", function () {
-      setDefaultDates();
-      document.getElementById("filterZone").value = "";
-      document.getElementById("filterStatus").value = "";
-      document.getElementById("filterDept").value = "";
-      applyFilters();
-    });
-
-    document.querySelectorAll(".group-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        document.querySelectorAll(".group-btn").forEach(function (b) { b.classList.remove("active"); });
-        btn.classList.add("active");
-        activeGroup = btn.dataset.group;
-        renderChart();
-      });
-    });
-
-    document.getElementById("exportCsv").addEventListener("click", exportCsv);
-  }
-
-  function exportCsv() {
-    var rows = [["Event","Date","Location","Zone","PAX","Billing","PreCost","ApprovedBills","PL","Status"]];
-    for (var ev of filtered) {
-      var pc   = allPreCost[ev.id];
-      var cost = (pc && pc.totalCost) ? pc.totalCost : 0;
-      var bills = allBills.filter(function (b) { return b.eventClientId === ev.id && b.status === "approved"; })
-                          .reduce(function (s, b) { return s + b.amount; }, 0);
-      var baseRev = ev.totalBilling / 1.05;
-      rows.push([ev.name, ev.date, ev.location, ev.locationZone, ev.pax, Math.round(baseRev), cost, bills, Math.round(baseRev - cost - bills), ev.status]);
-    }
-    var csv = rows.map(function (r) { return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(","); }).join("\n");
-    var a = document.createElement("a");
-    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
-    a.download = "odc-analytics-" + new Date().toISOString().slice(0, 10) + ".csv";
-    a.click();
-  }
-
-  ODC.ready.then(init);
-}());
+ODC.ready.then(init);
+ODC.registerSync(reload);

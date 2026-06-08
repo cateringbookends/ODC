@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Dashboard - ODC Event Dashboard</title>
+  <link rel="stylesheet" href="styles.css?v=12">
+</head>
+<body>
+  <script src="auth-guard.js?v=8"></script>
+  <header class="top-nav">
+    <div class="top-nav-bar">
+      <a class="brand" href="dashboard.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
+    </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
+      <a class="active" href="dashboard.html">Dashboard</a>
+      <a href="index.html">Sales Intake</a>
+      <a href="saved-events.html">Saved Events</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a href="financial-control.html">Financial Control</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a href="bill-submission.html">Bill Submission</a>
+      <a href="analytics.html">Analytics</a>
+      <a href="admin.html" data-admin-only>Admin</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell planning-shell">
+    <section class="panel dash-hero-panel">
+      <div class="panel-header dash-hero">
+        <div>
+          <p class="eyebrow">Command Center</p>
+          <h1 id="dashGreeting">Dashboard</h1>
+          <p class="dash-subtitle" id="dashSubtitle">Live event operations, money movement, planning, and controls.</p>
+        </div>
+        <div class="dash-now">
+          <span id="dashTodayLabel">Today</span>
+          <strong id="dashClock">--:--</strong>
+        </div>
+      </div>
+
+      <div class="dash-stat-grid" id="dashStats">
+        <div class="dash-stat-card">
+          <span class="dash-stat-label">Total Events</span>
+          <strong class="dash-stat-value" id="statTotal">—</strong>
+        </div>
+        <div class="dash-stat-card">
+          <span class="dash-stat-label">Active (Open + Planning)</span>
+          <strong class="dash-stat-value" id="statActive">—</strong>
+        </div>
+        <div class="dash-stat-card">
+          <span class="dash-stat-label">Events This Month</span>
+          <strong class="dash-stat-value" id="statThisMonth">—</strong>
+        </div>
+        <div class="dash-stat-card">
+          <span class="dash-stat-label">Total Billing (Active)</span>
+          <strong class="dash-stat-value" id="statBilling">—</strong>
+        </div>
+      </div>
+
+      <section class="dash-section" id="upcomingSection">
+        <div class="dash-section-header">
+          <h2>Upcoming Events <small id="upcomingCount"></small></h2>
+          <a href="saved-events.html" class="secondary-button" style="font-size:0.78rem;padding:4px 10px">View All</a>
+        </div>
+        <div id="upcomingList" class="dash-table-wrap"></div>
+      </section>
+
+      <section class="dash-section" id="overdueSection">
+        <div class="dash-section-header">
+          <h2>Overdue Payment Cycles <small id="overdueCount"></small></h2>
+        </div>
+        <div id="overdueList" class="dash-table-wrap"></div>
+      </section>
+
+      <section class="dash-section">
+        <div class="dash-section-header">
+          <h2>Quick Actions</h2>
+        </div>
+        <div class="dash-quick-actions">
+          <a href="index.html" class="dash-action-btn">+ New Event</a>
+          <a href="saved-events.html" class="dash-action-btn">All Events</a>
+          <a href="pre-cost-planning.html" class="dash-action-btn">Pre Cost Planning</a>
+          <a href="petty-cash.html" class="dash-action-btn">Petty Cash</a>
+          <a href="bill-submission.html" class="dash-action-btn">Bill Submission</a>
+          <a href="financial-control.html" class="dash-action-btn">Financial Control</a>
+          <a href="analytics.html" class="dash-action-btn">Analytics</a>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="store.js?v=5"></script>
+  <script src="data.js?v=5"></script>
+  <script src="event-store.js?v=5"></script>
+  <script src="dashboard.js?v=7"></script>
+</body>
+</html>

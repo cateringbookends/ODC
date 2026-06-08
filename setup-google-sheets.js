@@ -27,7 +27,7 @@ if (!fs.existsSync(CONFIG_PATH)) {
   process.exit(1);
 }
 
-const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8").replace(/^\uFEFF/, ""));
 if (!cfg.scriptUrl || !cfg.apiKey) {
   console.error("google-sync-config.json must have scriptUrl and apiKey.\n");
   process.exit(1);
@@ -39,45 +39,30 @@ db.exec("PRAGMA foreign_keys = ON;");
 
 /* ---- HTTP helper (with redirect following) ---- */
 function post(action, payload) {
-  return new Promise((resolve, reject) => {
-    const body = Buffer.from(JSON.stringify({ apiKey: cfg.apiKey, action, ...payload }));
+  return fetch(cfg.scriptUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": "ODC-Setup/1.0" },
+    body: JSON.stringify({ apiKey: cfg.apiKey, action, ...payload }),
+    redirect: "follow"
+  }).then(async (res) => {
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch { data = { raw }; }
+    if (!res.ok || data.error || data.raw) throw new Error(data.error || `Google setup HTTP ${res.status}: ${raw.slice(0, 160)}`);
+    return data;
+  });
+}
 
-    function attempt(urlStr, redirects) {
-      if (redirects > 5) return reject(new Error("Too many redirects"));
-      let url;
-      try { url = new URL(urlStr); } catch (e) { return reject(e); }
-
-      const req = https.request(
-        {
-          hostname: url.hostname,
-          path: url.pathname + url.search,
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Content-Length": body.length,
-            "User-Agent": "ODC-Setup/1.0"
-          }
-        },
-        (res) => {
-          if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
-            res.resume();
-            attempt(res.headers.location, redirects + 1);
-            return;
-          }
-          let raw = "";
-          res.on("data", (d) => (raw += d));
-          res.on("end", () => {
-            try { resolve(JSON.parse(raw)); }
-            catch (e) { resolve({ raw }); }
-          });
-        }
-      );
-      req.on("error", reject);
-      req.write(body);
-      req.end();
-    }
-
-    attempt(cfg.scriptUrl, 0);
+function getStatus() {
+  const url = new URL(cfg.scriptUrl);
+  url.searchParams.set("apiKey", cfg.apiKey);
+  url.searchParams.set("action", "status");
+  return fetch(url, { headers: { "User-Agent": "ODC-Setup/1.0" }, redirect: "follow" }).then(async (res) => {
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch { data = { raw }; }
+    if (!res.ok || data.error || data.raw) throw new Error(data.error || `Google status HTTP ${res.status}: ${raw.slice(0, 160)}`);
+    return data;
   });
 }
 
@@ -168,7 +153,8 @@ function getAllBills() {
     submittedByUserId: r.submitted_by_user_id, headId: r.head_id, headName: r.head_name || r.head_id,
     personName: r.person_name, amount: r.amount, description: r.description || "",
     category: r.category, status: r.status, submittedAt: r.submitted_at,
-    reviewedBy: r.reviewed_by || "", reviewedAt: r.reviewed_at || ""
+    reviewedBy: r.reviewed_by || "", reviewedAt: r.reviewed_at || "",
+    receiptFileName: r.receipt_file_name || "", receiptDriveUrl: r.receipt_drive_url || ""
   }));
 }
 
@@ -184,7 +170,7 @@ const statusOnly = args.includes("--status");
   if (statusOnly) {
     console.log("Checking connectivity...");
     try {
-      const res = await post("status_check_ping", {});
+      const res = await getStatus();
       console.log("Response:", JSON.stringify(res));
     } catch (e) {
       console.error("Failed:", e.message);
@@ -219,7 +205,7 @@ const statusOnly = args.includes("--status");
       ["MasterPersons", "sync", { sheet: "MasterPersons", rows: heads.flatMap((h) => h.persons.length ? h.persons.map((p)=>[h.id,h.name,p.name,p.code||"",p.designation||"",p.department||"",p.location||""]) : [[h.id,h.name,"","","","",""]]) }],
       ["PettyCash", "sync", { sheet: "PettyCash", rows: pettyCash.flatMap(({eventId,eventName,data}) => [...(data.payouts||[]).map((r)=>[eventId,eventName||"","Payout",r.headId||"",r.person||"",r.purpose||"",r.amount]), ...(data.petty||[]).map((r)=>[eventId,eventName||"","Petty","",r.expense||"",r.purpose||"",r.amount])]) }],
       ["PreCost", "sync", { sheet: "PreCost", rows: preCost.map(({eventId,eventName,data:d})=>[eventId,eventName||"",d.foodCostPerPax,d.staffCount,d.totalStaffCost,d.equipmentDepreciation,d.thirdPartyVendor,d.decorCharge,d.miscellaneousCost,d.staffTransportationCharge,d.staffAccommodationCharge,d.staffFoodCost,d.refervanCharge,d.equipmentTransportationCharge,d.totalCost,d.profitLoss]) }],
-      ["BillSubmissions", "sync", { sheet: "BillSubmissions", rows: bills.map((b)=>[b.id,b.eventName||b.eventClientId||"",b.submittedByUserId||"",b.headName||b.headId,b.personName,b.amount,b.description||"",b.category,b.status,b.submittedAt,b.reviewedBy||"",b.reviewedAt||""]) }]
+      ["BillSubmissions", "sync", { sheet: "BillSubmissions", rows: bills.map((b)=>[b.id,b.eventName||b.eventClientId||"",b.submittedByUserId||"",b.headName||b.headId,b.personName,b.amount,b.description||"",b.category,b.status,b.submittedAt,b.reviewedBy||"",b.reviewedAt||"",b.receiptFileName||"",b.receiptDriveUrl||""]) }]
     ];
 
     for (const [label, action, payload] of tables) {

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Financial Control - ODC</title>
+  <link rel="stylesheet" href="styles.css?v=12">
+</head>
+<body>
+  <script src="auth-guard.js?v=8"></script>
+  <header class="top-nav">
+    <div class="top-nav-bar">
+      <a class="brand" href="dashboard.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
+    </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="index.html">Sales Intake</a>
+      <a href="saved-events.html">Saved Events</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a class="active" href="financial-control.html">Financial Control</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a href="bill-submission.html">Bill Submission</a>
+      <a href="analytics.html">Analytics</a>
+      <a href="admin.html" data-admin-only>Admin</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </header>
+
+  <main class="app-shell financial-shell">
+    <section class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Event Money Control</p>
+        <h1>Financial Control</h1>
+      </div>
+
+      <label class="event-picker field financial-event-picker">
+        <span>Select Event</span>
+        <select id="eventSelect"></select>
+      </label>
+
+      <div id="financialStatus" class="form-status">Loading...</div>
+      <div id="financialContent" hidden></div>
+    </section>
+  </main>
+
+  <script src="store.js?v=6"></script>
+  <script src="data.js?v=5"></script>
+  <script src="event-store.js?v=5"></script>
+  <script src="financial-control.js?v=1"></script>
+</body>
+</html>

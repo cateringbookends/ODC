@@ -55,10 +55,11 @@
   function buildNav(user) {
     var el = document.getElementById("nav-user");
     if (!el) return;
+    el.replaceChildren();
 
     var span = document.createElement("span");
     span.className = "nav-username";
-    span.textContent = user.username;
+    span.textContent = user.fullName || user.username;
 
     if (user.role === "admin") {
       var badge = document.createElement("span");

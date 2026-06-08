@@ -1,153 +1,168 @@
-"use strict";
-(function () {
-  var esc = function (s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+const params = new URLSearchParams(location.search);
+const eventId = params.get("id");
+const logContent = document.getElementById("logContent");
+const statusEl = document.getElementById("logStatus");
 
-  var id = new URLSearchParams(location.search).get("id");
-  var allLogs = [];
-  var activeFilter = "all";
+if (!eventId) {
+  statusEl.textContent = "No event specified.";
+} else {
+  loadLog();
+}
 
-  var SECTION_LABELS = {
-    core: "Event Details", kyc: "KYC / Client Info",
-    payment_schedule: "Payment Schedule", petty_cash: "Petty Cash", pre_cost: "Pre-Cost Plan"
-  };
-  var ACTION_STYLE = {
-    create:      { color: "#059669", bg: "#f0fdf4", label: "Created"    },
-    update:      { color: "#3b82f6", bg: "#eff6ff", label: "Updated"    },
-    petty_cash:  { color: "#8b5cf6", bg: "#f5f3ff", label: "Petty Cash" },
-    pre_cost:    { color: "#f59e0b", bg: "#fffbeb", label: "Pre-Cost"   },
-    delete:      { color: "#dc2626", bg: "#fef2f2", label: "Deleted"    }
-  };
+if (window.ODC && eventId) {
+  ODC.registerSync(() => {
+    if (!document.hidden) loadLog();
+  });
+}
 
-  if (!id) {
-    document.getElementById("logBody").innerHTML = '<p style="color:#dc2626;padding:2rem">No event ID in URL. Add ?id=EVT-xxx to the URL.</p>';
+let allEntries = [];
+let activeSection = "all";
+
+async function loadLog() {
+  statusEl.textContent = "Loading…";
+  try {
+    const [headerRes, logRes] = await Promise.all([
+      fetch("/api/events/" + encodeURIComponent(eventId) + "/header", { credentials: "same-origin" }),
+      fetch("/api/events/" + encodeURIComponent(eventId) + "/log", { credentials: "same-origin" })
+    ]);
+
+    const header = headerRes.ok ? await headerRes.json() : null;
+    allEntries = logRes.ok ? await logRes.json() : [];
+
+    statusEl.hidden = true;
+    render(header);
+  } catch (err) {
+    statusEl.textContent = "Error: " + err.message;
+  }
+}
+
+function render(header) {
+  logContent.innerHTML = "";
+
+  const topRow = document.createElement("div");
+  topRow.style.cssText = "display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap";
+
+  const backBtn = document.createElement("a");
+  backBtn.href = "event-dashboard.html?id=" + encodeURIComponent(eventId);
+  backBtn.className = "secondary-button";
+  backBtn.style.fontSize = "0.78rem";
+  backBtn.textContent = "← Event Dashboard";
+  topRow.append(backBtn);
+
+  const savedBtn = document.createElement("a");
+  savedBtn.href = "saved-events.html";
+  savedBtn.className = "secondary-button";
+  savedBtn.style.fontSize = "0.78rem";
+  savedBtn.textContent = "← All Events";
+  topRow.append(savedBtn);
+
+  logContent.append(topRow);
+
+  const panelHeader = document.createElement("div");
+  panelHeader.className = "panel-header";
+
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  eyebrow.textContent = "Audit Trail";
+  panelHeader.append(eyebrow);
+
+  const title = document.createElement("h1");
+  title.style.fontSize = "1.5rem";
+  title.textContent = header ? header.name : eventId;
+  panelHeader.append(title);
+
+  if (header) {
+    const metaP = document.createElement("p");
+    metaP.style.cssText = "font-size:0.82rem;color:var(--muted);margin-top:6px";
+    metaP.textContent = [
+      ODC.eventContextText(header, { includeDays: true }),
+      header.location,
+      header.status
+    ].filter(Boolean).join(" · ");
+    panelHeader.append(metaP);
+  }
+
+  logContent.append(panelHeader);
+
+  if (allEntries.length === 0) {
+    const p = document.createElement("p");
+    p.className = "form-status";
+    p.textContent = "No change history found for this event.";
+    logContent.append(p);
     return;
   }
 
-  // Update back link to event dashboard
-  document.getElementById("backLink").href = "event-dashboard.html?id=" + encodeURIComponent(id);
+  // Section filter buttons
+  const sections = ["all", ...new Set(allEntries.map(e => e.section).filter(Boolean))];
+  const filterRow = document.createElement("div");
+  filterRow.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:16px 0 14px";
 
-  // Load event header + logs in parallel
-  Promise.all([
-    fetch("/api/events/" + encodeURIComponent(id) + "/header", { headers: { "ngrok-skip-browser-warning": "true" } }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
-    fetch("/api/events/" + encodeURIComponent(id) + "/log",    { headers: { "ngrok-skip-browser-warning": "true" } }).then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
-  ]).then(function (results) {
-    var ev  = results[0];
-    var log = results[1] || [];
-
-    // Render event header
-    if (ev) {
-      document.title = ev.name + " — Event Log";
-      document.getElementById("eventName").textContent = ev.name;
-      var statusBadge = document.getElementById("eventStatus");
-      statusBadge.textContent = ev.status;
-      statusBadge.className = "bill-status-badge bill-status-badge-" + ev.status;
-      var meta = [ev.date, ev.location, ev.locationZone, ev.pax + " PAX", ev.days + " day(s)"].filter(Boolean).join(" · ");
-      document.getElementById("eventMeta").textContent = meta;
-    } else {
-      document.getElementById("eventName").textContent = "Event " + id;
-    }
-
-    allLogs = log;
-    renderLog();
+  sections.forEach(sec => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "secondary-button log-filter-btn" + (sec === activeSection ? " active" : "");
+    btn.style.cssText = "font-size:0.75rem;padding:3px 10px";
+    btn.textContent = sec === "all" ? "All" : sec.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    btn.dataset.section = sec;
+    btn.addEventListener("click", () => {
+      activeSection = sec;
+      document.querySelectorAll(".log-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.section === sec));
+      renderTable();
+    });
+    filterRow.append(btn);
   });
 
-  function renderLog() {
-    var query   = (document.getElementById("logSearch").value || "").toLowerCase().trim();
-    var filtered = allLogs.filter(function (r) {
-      if (activeFilter !== "all" && r.section !== activeFilter) return false;
-      if (query) {
-        var searchable = [r.field, r.old_value, r.new_value, r.username, r.section].join(" ").toLowerCase();
-        if (!searchable.includes(query)) return false;
-      }
-      return true;
-    });
+  logContent.append(filterRow);
 
-    var body = document.getElementById("logBody");
+  const tableWrap = document.createElement("div");
+  tableWrap.id = "logTableWrap";
+  tableWrap.className = "dash-table-wrap";
+  logContent.append(tableWrap);
 
-    if (!filtered.length) {
-      body.innerHTML = '<div class="panel" style="padding:2rem;text-align:center;color:var(--muted)">' +
-        (allLogs.length === 0 ? "No changes recorded for this event yet." : "No entries match the current filter.") +
-        '</div>';
-      return;
-    }
+  renderTable();
+}
 
-    // Group by date
-    var byDay = {};
-    filtered.forEach(function (r) {
-      var day = (r.ts || "").slice(0, 10);
-      if (!byDay[day]) byDay[day] = [];
-      byDay[day].push(r);
-    });
+function renderTable() {
+  const wrap = document.getElementById("logTableWrap");
+  if (!wrap) return;
+  wrap.innerHTML = "";
 
-    var html = '<div class="panel" style="padding:0">';
+  const entries = activeSection === "all" ? allEntries : allEntries.filter(e => e.section === activeSection);
 
-    Object.keys(byDay).sort().reverse().forEach(function (day, dayIdx) {
-      // Day separator
-      var dayLabel;
-      try { dayLabel = new Date(day + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
-      catch (e) { dayLabel = day; }
-
-      html += '<div style="padding:.6rem 1.25rem;background:var(--surface-soft);border-bottom:1px solid var(--surface-border);' + (dayIdx === 0 ? "border-radius:var(--radius-md) var(--radius-md) 0 0;" : "") + '">' +
-        '<span style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">' + esc(dayLabel) + '</span>' +
-        '<span style="margin-left:.75rem;font-size:.72rem;color:var(--muted)">' + byDay[day].length + ' change(s)</span>' +
-      '</div>';
-
-      byDay[day].forEach(function (r, idx) {
-        var style  = ACTION_STYLE[r.action] || { color: "#64748b", bg: "#f8fafc", label: r.action };
-        var secLabel = SECTION_LABELS[r.section] || r.section;
-        var time   = r.ts ? new Date(r.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
-        var ua     = (r.user_agent || "").replace(/\(.*?\)/g, "").trim().split(/\s+/)[0];
-        var ip     = r.ip_address || "";
-        var isLast = idx === byDay[day].length - 1;
-
-        html += '<div style="display:grid;grid-template-columns:100px 1fr auto;gap:1rem;padding:.85rem 1.25rem;border-bottom:' + (isLast ? "none" : "1px solid var(--surface-border)") + ';align-items:start">' +
-
-          // Col 1: action badge + section
-          '<div>' +
-            '<span style="display:inline-block;font-size:.68rem;font-weight:700;color:' + style.color + ';background:' + style.bg + ';border-radius:4px;padding:2px 7px;margin-bottom:3px">' + style.label + '</span>' +
-            '<div style="font-size:.72rem;color:var(--muted);margin-top:1px">' + esc(secLabel) + '</div>' +
-          '</div>' +
-
-          // Col 2: field + old → new
-          '<div>' +
-            (r.field ? '<div style="font-weight:600;font-size:.85rem;color:var(--ink);margin-bottom:3px">' + esc(r.field) + '</div>' : '') +
-            (r.old_value != null && r.new_value != null && String(r.old_value) !== String(r.new_value)
-              ? '<div style="font-size:.8rem;display:flex;flex-wrap:wrap;align-items:center;gap:.3rem">' +
-                  (r.old_value
-                    ? '<span style="background:#fef2f2;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace">' + esc(String(r.old_value).slice(0, 100)) + '</span>' +
-                      '<span style="color:var(--muted)">→</span>'
-                    : '<span style="color:var(--muted);font-style:italic">—</span><span style="color:var(--muted)">→</span>') +
-                  '<span style="background:#f0fdf4;color:#059669;padding:2px 6px;border-radius:3px;font-family:monospace">' + esc(String(r.new_value || "—").slice(0, 100)) + '</span>' +
-                '</div>'
-              : (r.new_value ? '<div style="font-size:.8rem;color:var(--muted)">' + esc(String(r.new_value).slice(0, 120)) + '</div>' : '')) +
-          '</div>' +
-
-          // Col 3: who + when + IP
-          '<div style="text-align:right;min-width:120px">' +
-            '<div style="font-size:.82rem;font-weight:700;color:var(--ink)">' + esc(r.username) + '</div>' +
-            '<div style="font-size:.72rem;color:var(--muted);margin-top:1px">' + esc(time) + '</div>' +
-            (ip   ? '<div style="font-size:.68rem;color:var(--muted);margin-top:1px">' + esc(ip) + '</div>'   : '') +
-            (ua   ? '<div style="font-size:.65rem;color:var(--muted)">' + esc(ua) + '</div>' : '') +
-          '</div>' +
-
-        '</div>';
-      });
-    });
-
-    html += '</div>';
-    body.innerHTML = html;
+  if (entries.length === 0) {
+    const p = document.createElement("p");
+    p.className = "form-status";
+    p.textContent = "No entries for this section.";
+    wrap.append(p);
+    return;
   }
 
-  // Filter buttons
-  document.querySelectorAll(".filter-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      document.querySelectorAll(".filter-btn").forEach(function (b) { b.classList.remove("active"); });
-      btn.classList.add("active");
-      activeFilter = btn.dataset.filter;
-      renderLog();
-    });
+  const table = document.createElement("table");
+  table.className = "dash-table";
+
+  const thead = document.createElement("thead");
+  const hrow = document.createElement("tr");
+  ["Time", "User", "Section", "Field", "Old Value", "New Value"].forEach(h => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    hrow.append(th);
   });
+  thead.append(hrow);
+  table.append(thead);
 
-  document.getElementById("logSearch").addEventListener("input", renderLog);
-
-}());
+  const tbody = document.createElement("tbody");
+  entries.forEach(entry => {
+    const tr = document.createElement("tr");
+    const ts = entry.ts ? new Date(entry.ts).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" }) : "";
+    [ts, entry.username, entry.section, entry.field, entry.old_value, entry.new_value].forEach((val, i) => {
+      const td = document.createElement("td");
+      td.textContent = val == null ? "—" : String(val);
+      if (i === 4) td.style.cssText = "color:var(--muted);font-size:0.8rem;max-width:180px;word-break:break-all";
+      if (i === 5) td.style.cssText = "color:var(--accent-dark);font-size:0.8rem;max-width:180px;word-break:break-all";
+      tr.append(td);
+    });
+    tbody.append(tr);
+  });
+  table.append(tbody);
+  wrap.append(table);
+}

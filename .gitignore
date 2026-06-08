@@ -28,6 +28,7 @@ cloudflared.exe
 
 # Google Sheets sync credentials (contains secret API key)
 google-sync-config.json
+apps-script/.clasp.json
 
 # OS / editor cruft
 Thumbs.db
@@ -35,3 +36,5 @@ Thumbs.db
 *.log
 verify-ui.js
 verify-screenshots/
+
+.vercel

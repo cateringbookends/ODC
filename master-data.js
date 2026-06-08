@@ -62,10 +62,13 @@ function saveMasterPersons(heads) {
     .catch((e) => console.warn("Master persons saved locally; server sync failed:", e.message));
 }
 
-ODC.addBoot(async () => {
+async function refreshMasterPersonsFromServer() {
   const data = await ODC.api("GET", "/api/master-persons");
   if (Array.isArray(data) && data.length) {
     _heads = data.map(normalizeHead);
     ODC.lsSet(ODC_MASTER_KEY, _heads);
   }
-});
+}
+
+ODC.addBoot(refreshMasterPersonsFromServer);
+ODC.addLiveRefresh(refreshMasterPersonsFromServer);

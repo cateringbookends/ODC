@@ -9,9 +9,6 @@ const eventTimePopover = document.querySelector("#eventTimePopover");
 const eventTimeHourList = document.querySelector("#eventTimeHourList");
 const eventTimeMinuteList = document.querySelector("#eventTimeMinuteList");
 const eventTimeAmPmList = document.querySelector("#eventTimeAmPmList");
-const locationZoneInput = document.querySelector("#locationZone");
-const locationZoneCustomField = document.querySelector("#locationZoneCustomField");
-const locationZoneCustomInput = document.querySelector("#locationZoneCustom");
 const paxInput = document.querySelector("#pax");
 const costInput = document.querySelector("#costPerPax");
 const eventDaysInput = document.querySelector("#eventDays");
@@ -90,16 +87,10 @@ function setDmyDate(input, dmy) {
 }
 
 function getCityValue() {
-  const preset = locationZoneInput.value;
-  if (preset === "other") return locationZoneCustomInput.value.trim();
-  if (preset === "surat") return "Surat";
-  if (preset === "ahmedabad") return "Ahmedabad";
   return "";
 }
 
 function syncCityField() {
-  locationZoneCustomField.hidden = locationZoneInput.value !== "other";
-  if (locationZoneInput.value !== "other") locationZoneCustomInput.value = "";
 }
 
 function getAdvanceDueDate() {
@@ -420,21 +411,6 @@ function loadEventIntoForm(id) {
   setTimePopover(false);
   eventNameInput.value = event.name || "";
   locationInput.value = event.location || "";
-  const zone = String(event.locationZone || "").trim();
-  if (zone.toLowerCase() === "surat") {
-    locationZoneInput.value = "surat";
-    locationZoneCustomInput.value = "";
-  } else if (zone.toLowerCase() === "ahmedabad") {
-    locationZoneInput.value = "ahmedabad";
-    locationZoneCustomInput.value = "";
-  } else if (zone) {
-    locationZoneInput.value = "other";
-    locationZoneCustomInput.value = zone;
-  } else {
-    locationZoneInput.value = "";
-    locationZoneCustomInput.value = "";
-  }
-  syncCityField();
   paxInput.value = event.pax || "";
   eventDaysInput.value = event.days || 1;
   costInput.value = event.costPerPax || "";
@@ -468,9 +444,6 @@ function clearForm() {
   eventDaysInput.value = 1;
   setTime12("");
   setTimePopover(false);
-  locationZoneInput.value = "";
-  locationZoneCustomInput.value = "";
-  syncCityField();
   setDmyDate(entryDateInput, "");
   setDmyDate(eventDateInput, "");
   Object.values(invoiceKycInputs).forEach((input) => { input.value = ""; });
@@ -588,14 +561,9 @@ eventTimePopover.addEventListener("keydown", (e) => {
   }
 });
 
-[foodTypeInput, allergicCountInput, allergicNotesInput, locationZoneCustomInput].forEach((el) => {
+[foodTypeInput, allergicCountInput, allergicNotesInput].forEach((el) => {
   el.addEventListener("input", updateBilling);
   el.addEventListener("change", updateBilling);
-});
-
-locationZoneInput.addEventListener("change", () => {
-  syncCityField();
-  updateBilling();
 });
 addPaymentButton.addEventListener("click", addCustomPaymentCycle);
 saveEventButton.addEventListener("click", saveCurrentEvent);

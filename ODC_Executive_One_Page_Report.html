@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ODC — Executive Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  :root {
+    --emerald: #059669;
+    --emerald-dark: #047857;
+    --emerald-light: #d1fae5;
+    --emerald-soft: #ecfdf5;
+    --slate-900: #0f172a;
+    --slate-700: #334155;
+    --slate-500: #64748b;
+    --slate-300: #cbd5e1;
+    --slate-100: #f1f5f9;
+    --slate-50: #f8fafc;
+    --white: #ffffff;
+    --gold: #d97706;
+    --gold-soft: #fef3c7;
+    --blue: #0369a1;
+    --blue-soft: #e0f2fe;
+    --purple: #7c3aed;
+    --purple-soft: #ede9fe;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    background: #e2e8f0;
+    color: var(--slate-900);
+    min-height: 100vh;
+    padding: 32px 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── PAGE WRAPPER ── */
+  .page {
+    max-width: 960px;
+    margin: 0 auto;
+    background: var(--white);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 25px 60px -12px rgba(15,23,42,.18), 0 4px 16px rgba(15,23,42,.06);
+  }
+
+  /* ── HEADER ── */
+  .header {
+    background: linear-gradient(135deg, var(--slate-900) 0%, #1e293b 60%, #0f2a1e 100%);
+    padding: 40px 48px 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 60% 100% at 90% 50%, rgba(5,150,105,.25) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--emerald) 0%, #34d399 50%, var(--emerald) 100%);
+  }
+  .header-inner {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .brand-block {}
+  .brand-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(5,150,105,.15);
+    border: 1px solid rgba(5,150,105,.35);
+    color: #6ee7b7;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 20px;
+    margin-bottom: 12px;
+  }
+  .brand-tag::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #34d399;
+    flex-shrink: 0;
+  }
+  .header h1 {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--white);
+    letter-spacing: -.02em;
+    line-height: 1.1;
+    margin-bottom: 8px;
+  }
+  .header h1 span { color: #34d399; }
+  .header-sub {
+    font-size: 14px;
+    color: #94a3b8;
+    font-weight: 400;
+    line-height: 1.5;
+    max-width: 420px;
+  }
+  .meta-block {
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .meta-date {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .meta-val {
+    font-size: 13px;
+    color: #94a3b8;
+    font-weight: 400;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 12px;
+    background: rgba(5,150,105,.15);
+    border: 1px solid rgba(5,150,105,.3);
+    color: #6ee7b7;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+  .status-pill::before {
+    content: '';
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #34d399;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100%{opacity:1;transform:scale(1)}
+    50%{opacity:.6;transform:scale(1.15)}
+  }
+
+  /* ── KPI STRIP ── */
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-bottom: 1px solid var(--slate-100);
+  }
+  .kpi {
+    padding: 22px 24px;
+    border-right: 1px solid var(--slate-100);
+    position: relative;
+  }
+  .kpi:last-child { border-right: none; }
+  .kpi-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    margin-bottom: 10px;
+  }
+  .kpi-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--slate-500);
+    margin-bottom: 4px;
+  }
+  .kpi-value {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    color: var(--slate-900);
+    line-height: 1;
+    margin-bottom: 3px;
+  }
+  .kpi-sub {
+    font-size: 11px;
+    color: var(--slate-500);
+    font-weight: 400;
+  }
+  .kpi-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    border-radius: 0;
+  }
+
+  /* ── BODY ── */
+  .body {
+    padding: 36px 48px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  /* ── SECTION CARD ── */
+  .card {
+    background: var(--white);
+    border: 1px solid var(--slate-100);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card.full { grid-column: 1 / -1; }
+  .card.accent-green { border-color: #a7f3d0; }
+  .card.accent-gold { border-color: #fde68a; }
+  .card.accent-blue { border-color: #bae6fd; }
+  .card.accent-purple { border-color: #ddd6fe; }
+
+  .card-head {
+    padding: 14px 18px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--slate-100);
+  }
+  .card-icon {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--slate-700);
+  }
+  .card-body { padding: 16px 18px; }
+
+  /* ── MODULE GRID ── */
+  .module-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .module-chip {
+    background: var(--slate-50);
+    border: 1px solid var(--slate-100);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .module-chip .m-icon { font-size: 16px; margin-bottom: 2px; }
+  .module-chip .m-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--slate-700);
+    line-height: 1.2;
+  }
+  .module-chip .m-desc {
+    font-size: 10px;
+    color: var(--slate-500);
+    line-height: 1.3;
+  }
+
+  /* ── IMPACT LIST ── */
+  .impact-list { display: flex; flex-direction: column; gap: 10px; }
+  .impact-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--slate-700);
+    line-height: 1.45;
+  }
+  .impact-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--emerald);
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+
+  /* ── TIME SAVINGS TABLE ── */
+  .savings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .savings-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--slate-500);
+    padding: 6px 10px 8px;
+    border-bottom: 1px solid var(--slate-100);
+  }
+  .savings-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--slate-50);
+    color: var(--slate-700);
+    line-height: 1.3;
+    vertical-align: top;
+  }
+  .savings-table tr:last-child td { border-bottom: none; }
+  .savings-table td:first-child { font-weight: 500; }
+  .savings-badge {
+    display: inline-block;
+    background: var(--emerald-light);
+    color: var(--emerald-dark);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    white-space: nowrap;
+  }
+
+  /* ── COST AVOIDANCE ── */
+  .cost-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .cost-box {
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .cost-box.green { background: var(--emerald-soft); border: 1px solid #a7f3d0; }
+  .cost-box.gold  { background: var(--gold-soft);    border: 1px solid #fde68a; }
+  .cost-box-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .cost-box.green .cost-box-label { color: var(--emerald-dark); }
+  .cost-box.gold  .cost-box-label { color: #92400e; }
+  .cost-box-val {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .cost-box.green .cost-box-val { color: var(--emerald-dark); }
+  .cost-box.gold  .cost-box-val { color: var(--gold); }
+  .cost-box-sub { font-size: 11px; color: var(--slate-500); }
+  .cost-note {
+    font-size: 12px;
+    color: var(--slate-700);
+    line-height: 1.5;
+    background: var(--slate-50);
+    border-radius: 8px;
+    padding: 10px 14px;
+    border-left: 3px solid var(--emerald);
+  }
+
+  /* ── NEXT UPGRADES ── */
+  .upgrade-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .upgrade-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--slate-700);
+    line-height: 1.4;
+  }
+  .upgrade-num {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--purple-soft);
+    color: var(--purple);
+    font-size: 10px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ── COMPLIANCE ── */
+  .compliance-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .comp-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--slate-700);
+    line-height: 1.4;
+  }
+  .comp-check {
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    background: var(--emerald-light);
+    color: var(--emerald-dark);
+    font-size: 10px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ── STATUS BAR ── */
+  .status-bar {
+    background: linear-gradient(135deg, var(--slate-900) 0%, #1e293b 100%);
+    padding: 16px 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    color: #94a3b8;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .status-dot.live { background: #34d399; }
+  .status-dot.wip  { background: #fbbf24; }
+
+  /* ── FOOTER ── */
+  .footer {
+    background: var(--slate-50);
+    border-top: 1px solid var(--slate-100);
+    padding: 14px 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .footer-left {
+    font-size: 11px;
+    color: var(--slate-500);
+  }
+  .footer-left strong { color: var(--slate-700); }
+  .footer-right {
+    font-size: 11px;
+    color: var(--slate-500);
+  }
+  .footer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--emerald-soft);
+    border: 1px solid #a7f3d0;
+    color: var(--emerald-dark);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 10px;
+    letter-spacing: .04em;
+  }
+
+  @media print {
+    body { background: white; padding: 0; }
+    .page { box-shadow: none; border-radius: 0; max-width: 100%; }
+    @page { margin: 0; size: A4; }
+  }
+
+  @media (max-width: 700px) {
+    .body { grid-template-columns: 1fr; padding: 24px 20px; }
+    .card.full { grid-column: 1; }
+    .header { padding: 28px 20px 24px; }
+    .header-inner { flex-direction: column; }
+    .meta-block { text-align: left; }
+    .kpi-strip { grid-template-columns: 1fr 1fr; }
+    .module-grid { grid-template-columns: 1fr 1fr; }
+    .cost-grid { grid-template-columns: 1fr; }
+    .compliance-grid { grid-template-columns: 1fr; }
+    .status-bar, .footer { padding: 14px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ══ HEADER ══ -->
+  <div class="header">
+    <div class="header-inner">
+      <div class="brand-block">
+        <div class="brand-tag">Executive Report · Confidential</div>
+        <h1>ODC <span>Event Dashboard</span></h1>
+        <p class="header-sub">Centralised event operations &amp; finance platform — sales to settlement, fully in-house.</p>
+      </div>
+      <div class="meta-block">
+        <div class="meta-date">Prepared</div>
+        <div class="meta-val">June 2026</div>
+        <div class="status-pill">All Core Modules Live</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ KPI STRIP ══ -->
+  <div class="kpi-strip">
+    <div class="kpi">
+      <div class="kpi-icon" style="background:#ecfdf5;">🗂️</div>
+      <div class="kpi-label">Modules Live</div>
+      <div class="kpi-value">10+</div>
+      <div class="kpi-sub">Sales → Admin</div>
+      <div class="kpi-bar" style="background:var(--emerald);"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon" style="background:#eff6ff;">⏱️</div>
+      <div class="kpi-label">Monthly Time Saved</div>
+      <div class="kpi-value">60–100</div>
+      <div class="kpi-sub">staff hours @ 50 events</div>
+      <div class="kpi-bar" style="background:#3b82f6;"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon" style="background:#fef9c3;">💰</div>
+      <div class="kpi-label">Build Cost Avoided</div>
+      <div class="kpi-value">₹5–8L</div>
+      <div class="kpi-sub">vs. external vendor</div>
+      <div class="kpi-bar" style="background:#d97706;"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon" style="background:#faf5ff;">🛡️</div>
+      <div class="kpi-label">Audit &amp; Access</div>
+      <div class="kpi-value">Full</div>
+      <div class="kpi-sub">Logs, sessions, IP</div>
+      <div class="kpi-bar" style="background:#7c3aed;"></div>
+    </div>
+  </div>
+
+  <!-- ══ BODY GRID ══ -->
+  <div class="body">
+
+    <!-- PURPOSE + MODULES (full width) -->
+    <div class="card full accent-green">
+      <div class="card-head">
+        <div class="card-icon" style="background:var(--emerald-soft);font-size:14px;">🏗️</div>
+        <span class="card-title">What The System Centralises</span>
+      </div>
+      <div class="card-body">
+        <div class="module-grid">
+          <div class="module-chip">
+            <div class="m-icon">📋</div>
+            <div class="m-name">Sales Intake</div>
+            <div class="m-desc">Booking, PAX, billing, advance schedule, GST, food &amp; allergy notes, zone</div>
+          </div>
+          <div class="module-chip">
+            <div class="m-icon">📊</div>
+            <div class="m-name">Pre Cost Planning</div>
+            <div class="m-desc">Food, staff, vendor, decor, equipment, misc — projected P&amp;L</div>
+          </div>
+          <div class="module-chip">
+            <div class="m-icon">💵</div>
+            <div class="m-name">Petty Cash</div>
+            <div class="m-desc">Person-wise payouts, small expenses, usage visibility, remaining balance</div>
+          </div>
+          <div class="module-chip">
+            <div class="m-icon">🧾</div>
+            <div class="m-name">Bill Submission</div>
+            <div class="m-desc">Receipt upload, bill category, head/person mapping, event-wise capture</div>
+          </div>
+          <div class="module-chip">
+            <div class="m-icon">🔍</div>
+            <div class="m-name">Financial Control</div>
+            <div class="m-desc">Payment received, client balance, actual cost, planned vs actual P&amp;L</div>
+          </div>
+          <div class="module-chip">
+            <div class="m-icon">📈</div>
+            <div class="m-name">Analytics</div>
+            <div class="m-desc">Revenue pipeline, food preference, zone &amp; event contribution, top events</div>
+          </div>
+          <div class="module-chip">
+            <div class="m-icon">🔐</div>
+            <div class="m-name">Admin Controls</div>
+            <div class="m-desc">Users, active sessions, IP/device, audit logs, system status</div>
+          </div>
+          <div class="module-chip">
+            <div class="m-icon">☁️</div>
+            <div class="m-name">Google Backend</div>
+            <div class="m-desc">Sheets/Drive/Apps Script storage; Vercel production frontend</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUSINESS IMPACT -->
+    <div class="card accent-blue">
+      <div class="card-head">
+        <div class="card-icon" style="background:var(--blue-soft);">🎯</div>
+        <span class="card-title">Business Impact</span>
+      </div>
+      <div class="card-body">
+        <div class="impact-list">
+          <div class="impact-row"><div class="impact-dot"></div>Single source of truth linking sales, advance, petty cash, bills, in-house charges, and final P&amp;L to each event.</div>
+          <div class="impact-row"><div class="impact-dot"></div>Full accountability — who changed what, from which login, device, and IP — reducing disputes and uncontrolled access.</div>
+          <div class="impact-row"><div class="impact-dot"></div>Event profitability visible before, during, and after execution — no waiting for manual reconciliation.</div>
+          <div class="impact-row"><div class="impact-dot"></div>Receipt and bill data is event-linked, eliminating missing bills and delayed settlement.</div>
+          <div class="impact-row"><div class="impact-dot"></div>Admin team monitors active sessions and access directly from the UI without IT intervention.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TIME SAVINGS -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-icon" style="background:#ecfdf5;">⏱️</div>
+        <span class="card-title">Estimated Time Savings</span>
+      </div>
+      <div class="card-body">
+        <table class="savings-table">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Saved</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Event creation &amp; billing calc</td>
+              <td><span class="savings-badge">10–15 min</span></td>
+            </tr>
+            <tr>
+              <td>Pre-cost planning</td>
+              <td><span class="savings-badge">20–30 min</span></td>
+            </tr>
+            <tr>
+              <td>Petty cash tracking</td>
+              <td><span class="savings-badge">20–40 min</span></td>
+            </tr>
+            <tr>
+              <td>Bill &amp; expense reconciliation</td>
+              <td><span class="savings-badge">30–60 min</span></td>
+            </tr>
+            <tr>
+              <td>Monthly mgmt reporting</td>
+              <td><span class="savings-badge">1–2 days/mo</span></td>
+            </tr>
+            <tr>
+              <td><strong>50 events/month total</strong></td>
+              <td><span class="savings-badge" style="background:#dbeafe;color:#1d4ed8;">60–100 hrs/mo</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- COST AVOIDANCE -->
+    <div class="card accent-gold">
+      <div class="card-head">
+        <div class="card-icon" style="background:var(--gold-soft);">💰</div>
+        <span class="card-title">Cost Avoidance</span>
+      </div>
+      <div class="card-body">
+        <div class="cost-grid">
+          <div class="cost-box green">
+            <div class="cost-box-label">MVP Build (External)</div>
+            <div class="cost-box-val">₹4–5L</div>
+            <div class="cost-box-sub">Basic feature set</div>
+          </div>
+          <div class="cost-box gold">
+            <div class="cost-box-label">Polished Production</div>
+            <div class="cost-box-val">₹5–8L</div>
+            <div class="cost-box-sub">Full feature + deployment</div>
+          </div>
+        </div>
+        <div class="cost-note">
+          External maintenance would cost <strong>₹40,000–₹1,00,000/month</strong> for support, feature changes, and integrations. In-house development eliminated vendor lock-in, cut iteration cost, and enabled fast workflow-driven changes.
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPLIANCE + CONTROL -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-icon" style="background:#faf5ff;">🛡️</div>
+        <span class="card-title">Control &amp; Compliance</span>
+      </div>
+      <div class="card-body">
+        <div class="compliance-grid">
+          <div class="comp-item">
+            <div class="comp-check">✓</div>
+            Every action logged with user, timestamp, device/browser &amp; IP
+          </div>
+          <div class="comp-item">
+            <div class="comp-check">✓</div>
+            Active sessions reviewable; force-logout available from admin UI
+          </div>
+          <div class="comp-item">
+            <div class="comp-check">✓</div>
+            Centralised roles prevent uncontrolled access to financial records
+          </div>
+          <div class="comp-item">
+            <div class="comp-check">✓</div>
+            KYC validated client + server side (PAN / Aadhaar / GST / mobile)
+          </div>
+          <div class="comp-item">
+            <div class="comp-check">✓</div>
+            Strict CSP on all pages — no stored XSS; no inline handlers
+          </div>
+          <div class="comp-item">
+            <div class="comp-check">✓</div>
+            Google Drive/Sheets backend in familiar business ecosystem
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEXT UPGRADES -->
+    <div class="card accent-purple">
+      <div class="card-head">
+        <div class="card-icon" style="background:var(--purple-soft);">🚀</div>
+        <span class="card-title">Next High-Value Upgrades</span>
+      </div>
+      <div class="card-body">
+        <div class="upgrade-list">
+          <div class="upgrade-row"><div class="upgrade-num">1</div>Improve mobile and wide-screen layouts for faster daily field use</div>
+          <div class="upgrade-row"><div class="upgrade-num">2</div>Add stronger validations — negative/over-limit amounts, duplicate entries, required fields</div>
+          <div class="upgrade-row"><div class="upgrade-num">3</div>Exportable event-wise P&amp;L and settlement reports (PDF / CSV)</div>
+          <div class="upgrade-row"><div class="upgrade-num">4</div>Email receipt templates and one-click client payment confirmation mails</div>
+          <div class="upgrade-row"><div class="upgrade-num">5</div>Dashboard filters by date, event status, salesperson, food type &amp; department head</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /body -->
+
+  <!-- ══ STATUS BAR ══ -->
+  <div class="status-bar">
+    <div class="status-item"><div class="status-dot live"></div>Sales Intake &amp; Saved Events</div>
+    <div class="status-item"><div class="status-dot live"></div>Pre Cost &amp; Petty Cash</div>
+    <div class="status-item"><div class="status-dot live"></div>Bill Submission</div>
+    <div class="status-item"><div class="status-dot live"></div>Financial Control</div>
+    <div class="status-item"><div class="status-dot live"></div>Analytics &amp; Admin</div>
+    <div class="status-item"><div class="status-dot live"></div>Master Persons &amp; FAQ</div>
+    <div class="status-item"><div class="status-dot wip"></div>Mobile UI (In Progress)</div>
+  </div>
+
+  <!-- ══ FOOTER ══ -->
+  <div class="footer">
+    <div class="footer-left"><strong>ODC — Outdoor Catering Division</strong> &nbsp;·&nbsp; Internal Use Only &nbsp;·&nbsp; June 2026</div>
+    <div class="footer-right">
+      <span class="footer-badge">⚠️ Confidential</span>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+</body>
+</html>

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+@font-face { font-family:'CF'; src:url('/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf') format('truetype'); font-weight:400; }
+@font-face { font-family:'CF'; src:url('/usr/share/fonts/truetype/crosextra/Carlito-Bold.ttf') format('truetype'); font-weight:700; }
+
+@page { size:A4 portrait; margin:0; }
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { width:210mm; height:297mm; overflow:hidden; font-family:'CF',Arial,sans-serif; }
+
+/*
+  LAYOUT: one outer table, full page 210×297mm.
+  Row heights (mm) → px @ 3.7795px/mm:
+    banner   10mm  →  37.8px  ≈ 38
+    header   20mm  →  75.6px  ≈ 76
+    kpis     17mm  →  64.2px  ≈ 64
+    content 180mm  → 680.3px  ≈ 680
+    verified 24mm  →  90.7px  ≈ 91
+    sbar      8mm  →  30.2px  ≈ 30
+    footer   38mm  → 143.6px  ≈ 144
+    TOTAL   297mm  → 1122.5px ≈ 1123
+*/
+.page { width:210mm; height:297mm; border-collapse:collapse; table-layout:fixed; }
+.page > tbody > tr > td { padding:0; overflow:hidden; vertical-align:top; }
+
+/* ── BANNER ─────────────── */
+.r-banner { height:38px; background:#fff; border-bottom:1px solid #e2e8f0; }
+.banner-inner { display:flex; align-items:center; justify-content:space-between;
+  padding:0 13mm; height:100%; }
+.co-name  { font-size:12pt; font-weight:700; color:#0f172a; }
+.co-sub   { font-size:7.5pt; color:#64748b; font-style:italic; }
+.co-right { font-size:7.5pt; color:#64748b; text-align:right; line-height:1.6; }
+
+/* ── HEADER ─────────────── */
+.r-header { height:76px; background:linear-gradient(118deg,#0f172a 0%,#1e293b 60%,#0c2017 100%); position:relative; overflow:hidden; }
+.hdr-inner { display:flex; align-items:center; justify-content:space-between;
+  padding:0 13mm; height:calc(100% - 2.5px); }
+.hdr-line { position:absolute; bottom:0; left:0; right:0; height:2.5px;
+  background:linear-gradient(90deg,#059669,#34d399,#059669); }
+.h-tag    { display:inline-block; background:rgba(5,150,105,.2); border:1px solid rgba(5,150,105,.4);
+  color:#6ee7b7; font-size:7pt; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  padding:1.5px 8px; border-radius:20px; margin-bottom:3px; }
+.h-title  { font-size:22pt; font-weight:700; color:#fff; letter-spacing:-.02em; line-height:1; margin-bottom:2px; }
+.h-title span { color:#34d399; }
+.h-sub    { font-size:8pt; color:#94a3b8; }
+.h-right  { text-align:right; flex-shrink:0; }
+.h-meta   { font-size:8pt; color:#64748b; line-height:1.7; }
+.h-meta b { color:#94a3b8; font-weight:400; }
+.h-live   { display:inline-flex; align-items:center; gap:5px;
+  background:rgba(5,150,105,.2); border:1px solid rgba(5,150,105,.4);
+  color:#6ee7b7; font-size:7.5pt; font-weight:700; padding:2px 9px; border-radius:20px; margin-top:3px; }
+.h-live::before { content:''; width:5px; height:5px; border-radius:50%; background:#34d399; display:inline-block; }
+
+/* ── KPI STRIP ──────────── */
+.r-kpis { height:64px; border-bottom:1.5px solid #f1f5f9; overflow:hidden; }
+.kpis-inner { display:flex; height:100%; }
+.kpi      { flex:1; padding:6px 5mm; border-right:1px solid #f1f5f9; position:relative; overflow:hidden; }
+.kpi:last-child { border-right:none; }
+.kpi-bar  { position:absolute; top:0; left:0; right:0; height:2.5px; }
+.kpi-val  { font-size:16pt; font-weight:700; color:#0f172a; line-height:1.1; margin-bottom:2px; }
+.kpi-lbl  { font-size:6.5pt; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:#64748b; }
+.kpi-sub  { font-size:6pt; color:#94a3b8; margin-top:1px; }
+
+/* ── CONTENT AREA ───────── */
+.r-content { height:680px; overflow:hidden; }
+.content-inner { height:680px; overflow:hidden; padding:7px 13mm 0; }
+
+/* 3 rows × 221px + 2 gaps × 4px = 663 + 8 + 7 top = 678 < 680 */
+.crow { height:221px; overflow:hidden; margin-bottom:4px; }
+.crow:last-child { margin-bottom:0; }
+.ct { width:100%; height:221px; border-collapse:collapse; table-layout:fixed; overflow:hidden; }
+.ct td { padding:0; vertical-align:top; height:221px; overflow:hidden; }
+.ct .cl { width:54%; padding-right:4px; }
+.ct .cr { width:46%; padding-left:4px; }
+
+/* Card */
+.card { height:221px; overflow:hidden; border-radius:5px; border:1px solid #e2e8f0; }
+.card.gb { border-color:#6ee7b7; }
+.card.bb { border-color:#bfdbfe; }
+.card.ob { border-color:#fde68a; }
+.card.pb { border-color:#c4b5fd; }
+/* Card header: 28px */
+.card-hd { height:28px; overflow:hidden; display:flex; align-items:center; gap:5px;
+  padding:0 7px; background:#f8fafc; border-bottom:1px solid #e2e8f0; flex-shrink:0; }
+.hd-ico { width:15px; height:15px; border-radius:3px; text-align:center; line-height:15px;
+  font-size:9pt; font-weight:700; flex-shrink:0; }
+.hd-ttl { font-size:7pt; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:#334155; }
+/* Card body: 193px (221-28) */
+.card-bd { height:193px; overflow:hidden; padding:4px 6px; }
+
+/* Module chips: 2×4 table, each row ~46px */
+.mod-tbl { width:100%; height:100%; border-collapse:separate; border-spacing:2px; table-layout:fixed; }
+.mod-tbl td { padding:0; vertical-align:top; height:46px; overflow:hidden; }
+.chip { overflow:hidden; background:#f8fafc; border:1px solid #f1f5f9; border-radius:3px;
+  padding:3px 5px; height:100%; }
+.chip-name { font-size:7.5pt; font-weight:700; color:#0f172a; line-height:1.2; }
+.chip-desc { font-size:6pt; color:#64748b; line-height:1.2; }
+
+/* Savings table */
+.s-tbl { width:100%; border-collapse:collapse; }
+.s-tbl td { padding:4px 5px; font-size:7.5pt; color:#334155; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+.s-tbl tr:nth-child(even) td { background:#f8fafc; }
+.s-tbl tr:last-child td { border-bottom:none; font-weight:700; }
+.badge { display:inline-block; padding:1px 5px; border-radius:8px; font-size:7pt;
+  font-weight:700; background:#d1fae5; color:#047857; white-space:nowrap; }
+.badge.bl { background:#dbeafe; color:#1d4ed8; }
+
+/* Impact */
+.imp { font-size:7.5pt; color:#334155; line-height:1.4; padding:2px 0; border-bottom:1px solid #f8f8f8; display:flex; gap:5px; }
+.dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; margin-top:4px; background:#3b82f6; }
+
+/* Cost */
+.cost-boxes { display:flex; gap:4px; margin-bottom:4px; }
+.cbox { flex:1; border-radius:4px; padding:4px 6px; }
+.cbox.g { background:#ecfdf5; border:1px solid #6ee7b7; }
+.cbox.o { background:#fef3c7; border:1px solid #fde68a; }
+.c-lbl { font-size:6pt; font-weight:700; letter-spacing:.07em; text-transform:uppercase; margin-bottom:2px; }
+.cbox.g .c-lbl { color:#047857; } .cbox.o .c-lbl { color:#92400e; }
+.c-val { font-size:14pt; font-weight:700; line-height:1; margin-bottom:1px; }
+.cbox.g .c-val { color:#047857; } .cbox.o .c-val { color:#b45309; }
+.c-sub { font-size:6pt; color:#64748b; }
+.cost-note { background:#f8fafc; border-left:2.5px solid #059669;
+  padding:3px 6px; font-size:7pt; color:#334155; line-height:1.35; margin-bottom:4px; }
+.cost-note b { font-weight:700; }
+.t-pill { display:inline-block; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px;
+  padding:1px 5px; font-size:6pt; color:#334155; margin:1px 1px 0 0; }
+
+/* Compliance */
+.comp-tbl { width:100%; border-collapse:separate; border-spacing:3px 5px; table-layout:fixed; }
+.comp-tbl td { vertical-align:top; font-size:7pt; color:#334155; line-height:1.35; overflow:hidden; }
+.chk { display:inline-block; width:13px; height:13px; border-radius:3px; background:#d1fae5;
+  color:#047857; font-size:8pt; font-weight:700; text-align:center; line-height:13px;
+  vertical-align:middle; margin-right:3px; }
+
+/* Upgrades */
+.up { display:flex; gap:5px; font-size:7.5pt; color:#334155; line-height:1.35; margin-bottom:6px; }
+.up:last-child { margin-bottom:0; }
+.up-num { width:15px; height:15px; border-radius:50%; flex-shrink:0; background:#ede9fe;
+  color:#6d28d9; font-size:7pt; font-weight:700; text-align:center; line-height:15px; }
+
+/* ── VERIFIED ───────────── */
+.r-verified { height:91px; background:#022c22; border-top:3px solid #059669; overflow:hidden; }
+.verified-inner { display:flex; align-items:center; padding:0 13mm; gap:12mm; height:100%; }
+.v-seal { flex-shrink:0; text-align:center; }
+.v-seal-circle { width:38px; height:38px; border-radius:50%; background:#059669;
+  border:2px solid #34d399; display:flex; align-items:center; justify-content:center;
+  font-size:18pt; font-weight:700; color:#fff; margin:0 auto 2px; }
+.v-seal-lbl { font-size:6.5pt; font-weight:700; color:#34d399; letter-spacing:.07em; text-transform:uppercase; line-height:1.3; }
+.v-body { flex:1; overflow:hidden; }
+.v-heading { font-size:11.5pt; font-weight:700; color:#fff; margin-bottom:4px; }
+.v-heading span { color:#34d399; }
+.vp-tbl { width:100%; border-collapse:collapse; table-layout:fixed; }
+.vp-tbl td { padding:1.5px 0; font-size:7pt; color:#6ee7b7; line-height:1.4; vertical-align:top; }
+.vp-tbl .tick { color:#34d399; font-weight:700; width:14px; }
+.v-right { flex-shrink:0; text-align:right; }
+.v-date { font-size:10pt; font-weight:700; color:#34d399; }
+.v-by   { font-size:7pt; color:#4b7a5e; margin-top:3px; line-height:1.4; }
+
+/* ── STATUS BAR ─────────── */
+.r-sbar { height:30px; background:#0f172a; overflow:hidden; }
+.sbar-inner { display:flex; align-items:center; padding:0 13mm; gap:10px; height:100%; }
+.st-item { display:flex; align-items:center; gap:4px; white-space:nowrap; }
+.st-dot  { width:5px; height:5px; border-radius:50%; flex-shrink:0; }
+.st-dot.on  { background:#34d399; }
+.st-dot.wip { background:#fbbf24; }
+.st-txt { font-size:7pt; color:#94a3b8; }
+
+/* ── FOOTER ─────────────── */
+.r-footer { height:144px; background:#f8fafc; border-top:1px solid #e2e8f0; overflow:hidden; }
+.footer-inner { display:flex; justify-content:space-between; gap:8mm; padding:11px 13mm; height:100%; }
+.foot-left { flex:1; overflow:hidden; }
+.foot-co   { font-size:9pt; font-weight:700; color:#0f172a; margin-bottom:2px; }
+.foot-line { font-size:7.5pt; color:#64748b; margin-bottom:4px; }
+.foot-div  { height:1px; background:#e2e8f0; margin-bottom:4px; }
+.audit-hd  { font-size:7.5pt; font-weight:700; color:#334155; text-transform:uppercase; letter-spacing:.07em; margin-bottom:3px; }
+.audit-txt { font-size:6.5pt; color:#64748b; line-height:1.65; font-style:italic; }
+.foot-right { flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:8px; padding-top:4px; }
+.conf   { background:#fef3c7; border:1px solid #fde68a; color:#92400e;
+  font-size:7.5pt; font-weight:700; padding:2px 10px; border-radius:5px; }
+.cbadge { background:#022c22; border:1.5px solid #059669; color:#34d399;
+  font-size:8.5pt; font-weight:700; padding:5px 12px; border-radius:5px; }
+</style>
+</head>
+<body>
+
+<table class="page"><tbody>
+
+<!-- ══ BANNER ══════════════════════════════════════════════ -->
+<tr><td class="r-banner">
+  <div class="banner-inner">
+    <div>
+      <div class="co-name">K. Girdharlal International Pvt Ltd</div>
+      <div class="co-sub">Outdoor Catering Division &mdash; Operations &amp; Finance System</div>
+    </div>
+    <div class="co-right">Document Ref: ODC-EXEC-JUN-2026<br>For Internal Use Only &bull; June 2026</div>
+  </div>
+</td></tr>
+
+<!-- ══ HEADER ══════════════════════════════════════════════ -->
+<tr><td class="r-header">
+  <div class="hdr-inner">
+    <div>
+      <div class="h-tag">Executive Report &bull; Confidential</div>
+      <div class="h-title">ODC <span>Event Dashboard</span></div>
+      <div class="h-sub">Centralised event operations &amp; finance &mdash; sales to settlement, fully in-house.</div>
+    </div>
+    <div class="h-right">
+      <div class="h-meta">Prepared by: <b>aiops@kgirdharlal.com</b></div>
+      <div class="h-meta">Period: <b>June 2026</b></div>
+      <div class="h-live">All Core Modules Live</div>
+    </div>
+  </div>
+  <div class="hdr-line"></div>
+</td></tr>
+
+<!-- ══ KPI STRIP ═══════════════════════════════════════════ -->
+<tr><td class="r-kpis">
+  <div class="kpis-inner">
+    <div class="kpi">
+      <div class="kpi-bar" style="background:#059669;"></div>
+      <div class="kpi-val">14</div>
+      <div class="kpi-lbl">Pages / Modules</div>
+      <div class="kpi-sub">Login &rarr; Admin</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-bar" style="background:#3b82f6;"></div>
+      <div class="kpi-val">60&ndash;100</div>
+      <div class="kpi-lbl">Staff Hours Saved / Month</div>
+      <div class="kpi-sub">50 events / month basis</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-bar" style="background:#b45309;"></div>
+      <div class="kpi-val">&#8377;5&ndash;8L</div>
+      <div class="kpi-lbl">Build Cost Avoided</div>
+      <div class="kpi-sub">vs. external vendor quote</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-bar" style="background:#6d28d9;"></div>
+      <div class="kpi-val">5</div>
+      <div class="kpi-lbl">Deployment Targets</div>
+      <div class="kpi-sub">Vercel, Fly, Railway, Docker+</div>
+    </div>
+  </div>
+</td></tr>
+
+<!-- ══ CONTENT ═════════════════════════════════════════════ -->
+<tr><td class="r-content">
+  <div class="content-inner">
+
+    <!-- ROW 1: Modules + Time Savings -->
+    <div class="crow">
+      <table class="ct"><tbody><tr>
+        <td class="cl">
+          <div class="card gb">
+            <div class="card-hd">
+              <div class="hd-ico" style="background:#ecfdf5;color:#047857;">&#9632;</div>
+              <span class="hd-ttl">What the System Centralises — 8 Modules</span>
+            </div>
+            <div class="card-bd">
+              <table class="mod-tbl"><tbody>
+                <tr>
+                  <td><div class="chip"><div class="chip-name">Sales Intake</div><div class="chip-desc">Booking, PAX, billing, advance, GST, food &amp; allergy notes, zone</div></div></td>
+                  <td><div class="chip"><div class="chip-name">Pre Cost Planning</div><div class="chip-desc">Food, staff, vendor, decor, equip, misc &mdash; projected P&amp;L</div></div></td>
+                </tr>
+                <tr>
+                  <td><div class="chip"><div class="chip-name">Petty Cash</div><div class="chip-desc">Person-wise payouts &amp; expenses, remaining balance</div></div></td>
+                  <td><div class="chip"><div class="chip-name">Bill Submission</div><div class="chip-desc">Receipt upload, category, head/person mapping, event capture</div></div></td>
+                </tr>
+                <tr>
+                  <td><div class="chip"><div class="chip-name">Financial Control</div><div class="chip-desc">Payment received, client balance, actual cost &amp; P&amp;L</div></div></td>
+                  <td><div class="chip"><div class="chip-name">Analytics</div><div class="chip-desc">Revenue, food pref, zone contribution, top events</div></div></td>
+                </tr>
+                <tr>
+                  <td><div class="chip"><div class="chip-name">Admin &amp; Auth</div><div class="chip-desc">Login, sessions, IP/device, audit logs, force-logout</div></div></td>
+                  <td><div class="chip"><div class="chip-name">Google Backend</div><div class="chip-desc">Sheets/Drive/Apps Script sync; Vercel frontend</div></div></td>
+                </tr>
+              </tbody></table>
+            </div>
+          </div>
+        </td>
+        <td class="cr">
+          <div class="card bb">
+            <div class="card-hd">
+              <div class="hd-ico" style="background:#eff6ff;color:#1d4ed8;">&#9201;</div>
+              <span class="hd-ttl">Estimated Time Savings Per Event</span>
+            </div>
+            <div class="card-bd">
+              <table class="s-tbl">
+                <tr><td>Event creation &amp; billing calc</td><td style="text-align:right"><span class="badge">10&ndash;15 min</span></td></tr>
+                <tr><td>Pre-cost planning</td><td style="text-align:right"><span class="badge">20&ndash;30 min</span></td></tr>
+                <tr><td>Petty cash tracking</td><td style="text-align:right"><span class="badge">20&ndash;40 min</span></td></tr>
+                <tr><td>Bill &amp; expense reconciliation</td><td style="text-align:right"><span class="badge">30&ndash;60 min</span></td></tr>
+                <tr><td>Monthly management reporting</td><td style="text-align:right"><span class="badge">1&ndash;2 days/mo</span></td></tr>
+                <tr><td><b>50 events/month &mdash; Total</b></td><td style="text-align:right"><span class="badge bl">60&ndash;100 hrs/mo</span></td></tr>
+              </table>
+            </div>
+          </div>
+        </td>
+      </tr></tbody></table>
+    </div>
+
+    <!-- ROW 2: Business Impact + Cost Avoidance -->
+    <div class="crow">
+      <table class="ct"><tbody><tr>
+        <td class="cl">
+          <div class="card bb">
+            <div class="card-hd">
+              <div class="hd-ico" style="background:#eff6ff;color:#1d4ed8;">&#9673;</div>
+              <span class="hd-ttl">Business Impact</span>
+            </div>
+            <div class="card-bd">
+              <div class="imp"><div class="dot"></div>Single source of truth &mdash; sales, advance, petty cash, bills &amp; P&amp;L linked per event.</div>
+              <div class="imp"><div class="dot"></div>Full accountability &mdash; every change logged with user, device &amp; IP.</div>
+              <div class="imp"><div class="dot"></div>Profitability visible before, during &amp; after execution &mdash; no reconciliation wait.</div>
+              <div class="imp"><div class="dot"></div>Bills event-linked &mdash; eliminates missing vouchers and delayed settlement.</div>
+              <div class="imp"><div class="dot"></div>Offline-tolerant frontend &mdash; local cache works without server; syncs in background.</div>
+              <div class="imp"><div class="dot"></div>CSV export for all events; event status workflow managed in-app.</div>
+            </div>
+          </div>
+        </td>
+        <td class="cr">
+          <div class="card ob">
+            <div class="card-hd">
+              <div class="hd-ico" style="background:#fef3c7;color:#b45309;">&#8377;</div>
+              <span class="hd-ttl">Cost Avoidance &amp; Tech Highlights</span>
+            </div>
+            <div class="card-bd">
+              <div class="cost-boxes">
+                <div class="cbox g"><div class="c-lbl">MVP External</div><div class="c-val">&#8377;4&ndash;5L</div><div class="c-sub">Basic feature s

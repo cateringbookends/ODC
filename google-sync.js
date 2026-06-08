@@ -27,7 +27,7 @@ let cfg = null;
 function loadConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return false;
   try {
-    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8").replace(/^\uFEFF/, ""));
     if (!raw.scriptUrl || !raw.apiKey) return false;
     cfg = raw;
     console.log("[google-sync] enabled — syncing to Google Sheets");
@@ -44,46 +44,47 @@ function isEnabled() { return !!cfg; }
 /* HTTP (follows redirects — Apps Script uses 302)                          */
 /* ----------------------------------------------------------------------- */
 
-function httpsPost(urlStr, bodyBuf, attempt) {
-  if ((attempt || 0) > 5) { console.warn("[google-sync] too many redirects"); return; }
-  let url;
-  try { url = new URL(urlStr); } catch (e) { console.warn("[google-sync] bad URL:", urlStr); return; }
-
-  const req = https.request(
-    {
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": bodyBuf.length,
-        "User-Agent": "ODC-Sync/1.0"
+function httpsPost(urlStr, bodyBuf) {
+  fetch(urlStr, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": "ODC-Sync/1.0" },
+    body: bodyBuf,
+    redirect: "follow"
+  }).then(async (res) => {
+    const raw = await res.text();
+    if (!res.ok) console.warn(`[google-sync] HTTP ${res.status}: ${raw.slice(0, 120)}`);
+    else {
+      try {
+        const data = raw ? JSON.parse(raw) : {};
+        if (data.error) console.warn("[google-sync]", data.error);
+      } catch {
+        if (raw) console.warn("[google-sync] unexpected response:", raw.slice(0, 120));
       }
-    },
-    (res) => {
-      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
-        res.resume();
-        httpsPost(res.headers.location, bodyBuf, (attempt || 0) + 1);
-        return;
-      }
-      let raw = "";
-      res.on("data", (d) => (raw += d));
-      res.on("end", () => {
-        if (res.statusCode !== 200) {
-          console.warn(`[google-sync] HTTP ${res.statusCode}: ${raw.slice(0, 120)}`);
-        }
-      });
     }
-  );
-  req.on("error", (e) => console.warn("[google-sync] request error:", e.message));
-  req.write(bodyBuf);
-  req.end();
+  }).catch((e) => console.warn("[google-sync] request error:", e.message));
 }
 
 function push(action, payload) {
   if (!cfg) return;
   const body = Buffer.from(JSON.stringify({ apiKey: cfg.apiKey, action, ...payload }));
   setImmediate(() => httpsPost(cfg.scriptUrl, body, 0));
+}
+
+function httpsPostJson(urlStr, payload) {
+  return fetch(urlStr, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": "ODC-Sync/1.0" },
+    body: JSON.stringify(payload),
+    redirect: "follow"
+  }).then(async (res) => {
+    const raw = await res.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
+    if (!res.ok || data.error || data.raw) {
+      throw new Error(data.error || `Google sync HTTP ${res.status}: ${raw.slice(0, 120)}`);
+    }
+    return data;
+  });
 }
 
 /* ----------------------------------------------------------------------- */
@@ -166,9 +167,23 @@ function syncBills(bills) {
     b.id, b.eventName || b.eventClientId || "", b.submittedByUserId || "",
     b.headName || b.headId, b.personName, b.amount,
     b.description || "", b.category, b.status,
-    b.submittedAt, b.reviewedBy || "", b.reviewedAt || ""
+    b.submittedAt, b.reviewedBy || "", b.reviewedAt || "",
+    b.receiptFileName || "", b.receiptDriveUrl || ""
   ]);
   push("sync", { sheet: "BillSubmissions", rows });
+}
+
+async function uploadReceipt(file) {
+  if (!cfg) throw new Error("Google sync is not configured.");
+  return httpsPostJson(cfg.scriptUrl, {
+    apiKey: cfg.apiKey,
+    action: "upload_receipt",
+    fileName: file.fileName,
+    mimeType: file.mimeType,
+    base64: file.base64,
+    eventName: file.eventName || "",
+    billId: file.billId || ""
+  });
 }
 
 function appendAuditLog(entry) {
@@ -192,5 +207,6 @@ module.exports = {
   syncPettyCash,
   syncPreCost,
   syncBills,
+  uploadReceipt,
   appendAuditLog
 };

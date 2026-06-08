@@ -6,29 +6,26 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
   <title>Petty Cash - Event Dashboard</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js?v=5"></script>
-  <script src="firebase-backend.js?v=5"></script>
-  <script src="firebase-auth.js?v=5"></script>
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
+  <script src="auth-guard.js?v=8"></script>
   <header class="top-nav">
     <div class="top-nav-bar">
-      <a class="brand" href="index.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <a class="brand" href="dashboard.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
       <div id="nav-user" class="nav-user"></div>
     </div>
     <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="dashboard.html">Dashboard</a>
       <a href="index.html">Sales Intake</a>
       <a href="saved-events.html">Saved Events</a>
       <a href="pre-cost-planning.html">Pre Cost Planning</a>
       <a class="active" href="petty-cash.html">Petty Cash</a>
+      <a href="financial-control.html">Financial Control</a>
       <a href="master-persons.html">Master Persons</a>
       <a href="bill-submission.html">Bill Submission</a>
       <a href="analytics.html">Analytics</a>
-      <a href="admin.html">Admin</a>
+      <a href="admin.html" data-admin-only>Admin</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>

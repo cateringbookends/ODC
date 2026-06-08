@@ -119,11 +119,14 @@ function savePreCost(eventId, data) {
 }
 
 // Hydrate event cache from the server at boot.
-ODC.addBoot(async () => {
+async function refreshEventsFromServer() {
   const data = await ODC.api("GET", "/api/events");
   if (Array.isArray(data)) {
     _events = data;
     ODC.lsSet(ODC_EVENTS_KEY, _events);
     ODC.lsSet(ODC_EVENTS_SEEDED_KEY, true);
   }
-});
+}
+
+ODC.addBoot(refreshEventsFromServer);
+ODC.addLiveRefresh(refreshEventsFromServer);

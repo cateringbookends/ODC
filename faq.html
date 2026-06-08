@@ -6,29 +6,26 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
   <title>FAQ - Event Dashboard</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js?v=5"></script>
-  <script src="firebase-backend.js?v=5"></script>
-  <script src="firebase-auth.js?v=5"></script>
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
+  <script src="auth-guard.js?v=8"></script>
   <header class="top-nav">
     <div class="top-nav-bar">
-      <a class="brand" href="index.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <a class="brand" href="dashboard.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
       <div id="nav-user" class="nav-user"></div>
     </div>
     <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="dashboard.html">Dashboard</a>
       <a href="index.html">Sales Intake</a>
       <a href="saved-events.html">Saved Events</a>
       <a href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
+      <a href="financial-control.html">Financial Control</a>
       <a href="master-persons.html">Master Persons</a>
       <a href="bill-submission.html">Bill Submission</a>
       <a href="analytics.html">Analytics</a>
-      <a href="admin.html">Admin</a>
+      <a href="admin.html" data-admin-only>Admin</a>
       <a class="active" href="faq.html">FAQ</a>
     </nav>
   </header>
@@ -37,23 +34,73 @@
     <section class="panel planning-panel">
       <div class="panel-header">
         <p class="eyebrow">Help Center</p>
-        <h1>FAQ</h1>
+        <h1>How To Use ODC</h1>
       </div>
 
       <section class="faq-list" aria-label="Frequently asked questions">
         <details open>
-          <summary>When is KYC required?</summary>
-          <p>KYC details are required only when at least one payment cycle is marked Online.</p>
+          <summary>What is the correct workflow?</summary>
+          <p>Start with Sales Intake, then review the event in Saved Events. After that use Pre Cost Planning, Petty Cash, Bill Submission, Financial Control, and finally Analytics. Master Persons and Admin are setup/control pages, not daily event entry pages.</p>
         </details>
 
         <details>
-          <summary>Can advance be less or more than 50%?</summary>
-          <p>Yes. The advance starts at 50% by default, but the amount is editable.</p>
+          <summary>Where do I create a new event?</summary>
+          <p>Use Sales Intake. Enter the event details, date, pax, cost per pax, payment schedule, and client KYC/email if payment confirmation mail may be needed later.</p>
         </details>
 
         <details>
-          <summary>Can one event have both Cash and Online payments?</summary>
-          <p>Yes. Each billing cycle has its own billing mode, so payments can be split across Cash and Online.</p>
+          <summary>Where do I update client payment received?</summary>
+          <p>Use Financial Control. Select the event, record the payment cycle, amount, mode, received type, received by, and notes. This updates received amount and pending balance for that event.</p>
+        </details>
+
+        <details>
+          <summary>How does payment email work?</summary>
+          <p>After saving a received payment in Financial Control, click Send Mail in the payment list. The email is sent to the client email saved in Sales Intake KYC. If the client email is blank, add it in Sales Intake first.</p>
+        </details>
+
+        <details>
+          <summary>What is Pre Cost Planning for?</summary>
+          <p>Pre Cost Planning is the planned cost estimate before or during event preparation. It covers food, staff, vendor, decor, miscellaneous, transportation, accommodation, equipment, and other planning costs. It helps compare planned cost with billing.</p>
+        </details>
+
+        <details>
+          <summary>What is Petty Cash for?</summary>
+          <p>Use Petty Cash to assign money to authorized persons and record small direct event expenses. Person-wise assignment is later visible in Financial Control against approved bills and balances.</p>
+        </details>
+
+        <details>
+          <summary>Where do bills and receipts go?</summary>
+          <p>Use Bill Submission. Select event, head, person, category, amount, and upload receipt when available. Receipts are stored in Google Drive and bill data is saved for review and financial tracking.</p>
+        </details>
+
+        <details>
+          <summary>What is In-House Charges?</summary>
+          <p>In-House Charges are internal event costs such as per-head charges, other internal charges, or company-side costs that are not normal petty cash or external bills. Add them from Financial Control.</p>
+        </details>
+
+        <details>
+          <summary>What should I use Financial Control for?</summary>
+          <p>Financial Control is the event money summary. It shows billing, payment received, pending balance, planned cost, actual cost, in-house charges, petty cash by person, and profit/loss view.</p>
+        </details>
+
+        <details>
+          <summary>How should Master Persons be maintained?</summary>
+          <p>Master Persons should contain clean post/designation groups and the correct employee names/codes. This helps staff file upload, petty cash assignment, bill submission, and head/person selection remain accurate.</p>
+        </details>
+
+        <details>
+          <summary>Where can I see logs and sessions?</summary>
+          <p>Admins can use Admin to see users, active sessions, and audit logs. Event-specific changes can also be checked from the event Change Log.</p>
+        </details>
+
+        <details>
+          <summary>What date format should I use?</summary>
+          <p>Use DD-MM-YYYY everywhere. Calendar pickers may display based on browser settings, but saved event dates are shown in DD-MM-YYYY format.</p>
+        </details>
+
+        <details>
+          <summary>What should I do if a page looks old after an update?</summary>
+          <p>Refresh the browser once. On Safari, use Reload Page from the menu if needed. The app is deployed on Vercel and may need one refresh after a new production update.</p>
         </details>
       </section>
     </section>

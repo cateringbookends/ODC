@@ -4,122 +4,56 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://cdn.jsdelivr.net; script-src 'self' https://www.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self' blob:; worker-src blob:">
-  <title>Bill Submission - Event Dashboard</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js?v=5"></script>
-  <script src="firebase-backend.js?v=5"></script>
-  <script src="firebase-auth.js?v=5"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://cdn.jsdelivr.net; script-src 'self' https://www.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self' blob:; worker-src blob: https://cdn.jsdelivr.net">
+  <title>Bill Submission - ODC</title>
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
+  <script src="auth-guard.js?v=8"></script>
   <header class="top-nav">
     <div class="top-nav-bar">
-      <a class="brand" href="index.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <a class="brand" href="dashboard.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
       <div id="nav-user" class="nav-user"></div>
     </div>
     <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="dashboard.html">Dashboard</a>
       <a href="index.html">Sales Intake</a>
       <a href="saved-events.html">Saved Events</a>
       <a href="pre-cost-planning.html">Pre Cost Planning</a>
       <a href="petty-cash.html">Petty Cash</a>
+      <a href="financial-control.html">Financial Control</a>
       <a href="master-persons.html">Master Persons</a>
       <a class="active" href="bill-submission.html">Bill Submission</a>
       <a href="analytics.html">Analytics</a>
-      <a href="admin.html">Admin</a>
+      <a href="admin.html" data-admin-only>Admin</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>
 
-  <main class="app-shell planning-shell">
+  <main class="app-shell bill-shell">
     <section class="panel">
       <div class="panel-header">
-        <p class="eyebrow">Staff Portal</p>
-        <h1>Submit Bill / Expense</h1>
+        <p class="eyebrow">Submit</p>
+        <h1>Bill Submission</h1>
       </div>
-
-      <!-- Receipt OCR Scanner -->
-      <div style="background:var(--surface-soft);border:2px dashed var(--line);border-radius:var(--radius-md);padding:1rem;margin-bottom:1rem">
-        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-          <label for="receiptFile" style="cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.35rem .8rem;font-size:.82rem;font-weight:500">
-            📷 Scan Receipt
-            <input type="file" id="receiptFile" accept="image/*,application/pdf" style="display:none">
-          </label>
-          <span style="font-size:.78rem;color:var(--muted)">Upload receipt photo → auto-fills amount & category</span>
-          <span id="ocrStatus" style="font-size:.78rem;color:var(--accent);font-weight:500"></span>
-        </div>
-        <div id="ocrResult" hidden style="margin-top:.75rem;padding:.5rem .75rem;background:var(--surface);border-radius:6px;font-size:.82rem;color:var(--muted)"></div>
-      </div>
-
-      <div class="form-body">
-        <div class="field-group">
-          <label for="billEvent">Event <span style="color:#dc2626">*</span></label>
-          <select id="billEvent">
-            <option value="">— Select event —</option>
-          </select>
-        </div>
-        <div class="field-group">
-          <label for="billHead">Department Head <span style="color:#dc2626">*</span></label>
-          <select id="billHead">
-            <option value="">— Select head (from petty cash) —</option>
-          </select>
-          <span id="headHint" style="font-size:.75rem;color:var(--muted)"></span>
-        </div>
-        <div class="field-group">
-          <label for="billPerson">Your Name <span style="color:#dc2626">*</span></label>
-          <select id="billPerson">
-            <option value="">— Select your name —</option>
-          </select>
-          <input type="text" id="billPersonText" placeholder="Enter your name" style="display:none">
-        </div>
-        <div class="cost-grid" style="grid-template-columns:1fr 1fr;gap:14px">
-          <div class="field-group">
-            <label for="billAmount">Amount (&#8377;) <span style="color:#dc2626">*</span></label>
-            <input type="number" id="billAmount" min="0.01" step="0.01" placeholder="0.00">
-          </div>
-          <div class="field-group">
-            <label for="billCategory">Category</label>
-            <select id="billCategory">
-              <option value="misc">Miscellaneous</option>
-              <option value="food">Food</option>
-              <option value="transport">Transport</option>
-              <option value="equipment">Equipment</option>
-              <option value="accommodation">Accommodation</option>
-            </select>
-          </div>
-        </div>
-        <div class="field-group">
-          <label for="billDescription">Description / Notes</label>
-          <textarea id="billDescription" rows="3" placeholder="What is this expense for?"></textarea>
-        </div>
-        <p id="billError" class="bill-form-msg bill-form-error" hidden></p>
-        <p id="billSuccess" class="bill-form-msg bill-form-success" hidden></p>
-        <div class="form-actions" style="margin-top:1rem">
-          <button type="button" class="primary-button" id="billSubmitBtn">Submit Bill</button>
-        </div>
-      </div>
+      <div id="billForm"></div>
     </section>
-
     <section class="panel">
-      <div class="panel-header">
-        <p class="eyebrow" id="billsEyebrow">Your Submissions</p>
-        <h2 id="billsTitle">Submitted Bills</h2>
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <p class="eyebrow">History</p>
+          <h2>Submitted Bills</h2>
+        </div>
+        <button type="button" class="secondary-button" id="billRefresh" style="font-size:0.78rem;padding:4px 10px">Refresh</button>
       </div>
-      <div id="billsList"></div>
-    </section>
-
-    <section class="panel" style="text-align:center;padding:1.5rem" id="adminUsersPanel" hidden>
-      <p style="color:var(--muted);font-size:.85rem">User management moved to <a href="admin.html">Admin page →</a></p>
+      <p class="form-status" id="billListStatus">Loading…</p>
+      <div id="billList"></div>
     </section>
   </main>
 
   <script src="store.js?v=5"></script>
   <script src="data.js?v=5"></script>
   <script src="event-store.js?v=5"></script>
-  <script src="master-data.js?v=5"></script>
-  <script src="bill-submission.js?v=5"></script>
+  <script src="bill-submission.js?v=6"></script>
 </body>
 </html>

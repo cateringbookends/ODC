@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "public": false,
+  "cleanUrls": false,
+  "builds": [
+    {
+      "src": "api/[...path].js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "**/*",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/[...path].js?path=$1"
+    },
+    {
+      "src": "/",
+      "dest": "/dashboard.html"
+    },
+    {
+      "handle": "filesystem"
+    }
+  ]
+}

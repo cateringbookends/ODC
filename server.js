@@ -31,7 +31,10 @@ function migrate() {
     "ALTER TABLE events ADD COLUMN food_type TEXT",
     "ALTER TABLE events ADD COLUMN allergic_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE events ADD COLUMN allergic_notes TEXT",
-    "ALTER TABLE events ADD COLUMN location_zone TEXT"
+    "ALTER TABLE events ADD COLUMN location_zone TEXT",
+    "ALTER TABLE bill_submissions ADD COLUMN receipt_file_name TEXT",
+    "ALTER TABLE bill_submissions ADD COLUMN receipt_drive_file_id TEXT",
+    "ALTER TABLE bill_submissions ADD COLUMN receipt_drive_url TEXT"
   ];
   for (const sql of stmts) {
     try { db.exec(sql); } catch { /* column already exists */ }
@@ -133,15 +136,43 @@ function ensureEventFieldLog() {
       cycle_index INTEGER NOT NULL,
       cycle_name  TEXT,
       amount      REAL NOT NULL DEFAULT 0,
+      mode        TEXT NOT NULL DEFAULT 'cash',
+      receiver_type TEXT NOT NULL DEFAULT 'sales',
       received_by TEXT NOT NULL,
       received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       notes       TEXT,
+      mail_sent_at TEXT,
+      mail_sent_to TEXT,
+      mail_sent_by TEXT,
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS in_house_charges (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id    INTEGER NOT NULL,
+      head        TEXT,
+      category    TEXT,
+      person      TEXT,
+      description TEXT,
+      amount      REAL NOT NULL DEFAULT 0,
+      created_by  TEXT,
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_event_field_log_client ON event_field_log(event_client_id);
     CREATE INDEX IF NOT EXISTS idx_event_field_log_ts     ON event_field_log(ts);
     CREATE INDEX IF NOT EXISTS idx_payment_received_event ON payment_received(event_id);
+    CREATE INDEX IF NOT EXISTS idx_in_house_charges_event ON in_house_charges(event_id);
   `);
+  const paymentCols = new Set(db.prepare("PRAGMA table_info(payment_received)").all().map((row) => row.name));
+  for (const [name, ddl] of [
+    ["mode", "TEXT NOT NULL DEFAULT 'cash'"],
+    ["receiver_type", "TEXT NOT NULL DEFAULT 'sales'"],
+    ["mail_sent_at", "TEXT"],
+    ["mail_sent_to", "TEXT"],
+    ["mail_sent_by", "TEXT"]
+  ]) {
+    if (!paymentCols.has(name)) db.exec(`ALTER TABLE payment_received ADD COLUMN ${name} ${ddl}`);
+  }
 }
 ensureEventFieldLog();
 
@@ -323,6 +354,9 @@ function mapBillRow(r) {
     id: r.id,
     eventClientId: r.event_client_id,
     eventName: r.event_name,
+    eventDate: r.event_date || "",
+    eventPax: r.event_pax || 0,
+    eventCostPerPax: r.event_cost_per_pax || 0,
     submittedByUserId: r.submitted_by_user_id,
     headId: r.head_id,
     headName: r.head_name || r.head_id,
@@ -330,6 +364,9 @@ function mapBillRow(r) {
     amount: r.amount,
     description: r.description || "",
     category: r.category,
+    receiptFileName: r.receipt_file_name || "",
+    receiptDriveFileId: r.receipt_drive_file_id || "",
+    receiptDriveUrl: r.receipt_drive_url || "",
     status: r.status,
     submittedAt: r.submitted_at,
     reviewedBy: r.reviewed_by || "",
@@ -339,6 +376,7 @@ function mapBillRow(r) {
 
 const BILLS_SQL = `
   SELECT bs.*, e.event_name, e.client_id AS event_client_id,
+         e.event_date, e.pax AS event_pax, e.cost_per_pax AS event_cost_per_pax,
          mh.name AS head_name
   FROM bill_submissions bs
   JOIN events e ON e.id = bs.event_id
@@ -363,10 +401,27 @@ function createBill(sess, data) {
   if (!(amount > 0)) { const e = new Error("Amount must be greater than 0."); e.statusCode = 400; throw e; }
   const validCategories = ["food", "transport", "equipment", "accommodation", "misc"];
   const category = validCategories.includes(data.category) ? data.category : "misc";
+  const receiptFileName = String(data.receipt?.fileName || "").trim().slice(0, 180);
   const info = db.prepare(
-    "INSERT INTO bill_submissions (event_id, submitted_by_user_id, head_id, person_name, amount, description, category) VALUES (?,?,?,?,?,?,?)"
-  ).run(ev.id, sess.userId, String(data.headId), String(data.personName).trim(), amount, String(data.description || "").trim(), category);
-  return info.lastInsertRowid;
+    "INSERT INTO bill_submissions (event_id, submitted_by_user_id, head_id, person_name, amount, description, category, receipt_file_name) VALUES (?,?,?,?,?,?,?,?)"
+  ).run(ev.id, sess.userId, String(data.headId), String(data.personName).trim(), amount, String(data.description || "").trim(), category, receiptFileName);
+  return { id: info.lastInsertRowid, eventName: ev.event_name };
+}
+
+function attachBillReceipt(billId, receipt) {
+  if (!receipt || !receipt.fileName || !receipt.base64) return Promise.resolve(null);
+  if (!gSync.isEnabled()) return Promise.resolve(null);
+  return gSync.uploadReceipt({
+    billId,
+    fileName: String(receipt.fileName).slice(0, 180),
+    mimeType: String(receipt.mimeType || "application/octet-stream").slice(0, 120),
+    base64: String(receipt.base64),
+    eventName: String(receipt.eventName || "")
+  }).then((uploaded) => {
+    db.prepare("UPDATE bill_submissions SET receipt_file_name=?, receipt_drive_file_id=?, receipt_drive_url=? WHERE id=?")
+      .run(uploaded.name || receipt.fileName, uploaded.fileId || "", uploaded.url || "", Number(billId));
+    return uploaded;
+  });
 }
 
 function reviewBill(billId, status, reviewerUsername) {
@@ -937,7 +992,8 @@ async function handleApi(req, res, url) {
     if (sub[0] === "auth" && sub[1] === "me" && m === "GET") {
       const s = sessionFromReq(req);
       if (!s) return sendJson(res, 401, { error: "Not authenticated" });
-      return sendJson(res, 200, { username: s.username, role: s.role });
+      const user = db.prepare("SELECT full_name FROM users WHERE id = ?").get(s.userId);
+      return sendJson(res, 200, { username: s.username, role: s.role, fullName: user?.full_name || "" });
     }
 
     // POST /api/auth/logout
@@ -965,7 +1021,7 @@ async function handleApi(req, res, url) {
       const id = decodeURIComponent(sub[1]);
       const row = findEventRow(id);
       if (!row) return sendJson(res, 404, { error: "Not found" });
-      return sendJson(res, 200, { id: row.client_id, name: row.event_name, date: row.event_date, location: row.location, status: row.status, locationZone: row.location_zone || "", pax: row.pax, days: row.event_days });
+      return sendJson(res, 200, { id: row.client_id, name: row.event_name, date: row.event_date, location: row.location, status: row.status, locationZone: row.location_zone || "", pax: row.pax, days: row.event_days, costPerPax: row.cost_per_pax });
     }
 
     // ================================================================
@@ -1088,10 +1144,20 @@ async function handleApi(req, res, url) {
         }
         if (m === "POST") {
           const body = await readBody(req);
-          const billId = createBill(sess, body || {});
+          const created = createBill(sess, body || {});
+          const billId = created.id;
+          let receipt = null;
+          try {
+            receipt = await attachBillReceipt(billId, {
+              ...(body?.receipt || {}),
+              eventName: created.eventName || ""
+            });
+          } catch (e) {
+            console.warn("receipt upload failed:", e.message);
+          }
           auditLog(sess, req, "CREATE", "bill", String(billId), null);
           if (gSync.isEnabled()) gSync.syncBills(getAllBills());
-          return sendJson(res, 200, { ok: true, id: billId });
+          return sendJson(res, 200, { ok: true, id: billId, receipt });
         }
       }
       if (sub.length === 2 && m === "PUT") {
@@ -1207,15 +1273,45 @@ async function handleApi(req, res, url) {
           const body = (await readBody(req)) || {};
           const amount = Number(body.amount);
           if (!(amount > 0)) return sendJson(res, 400, { error: "Amount required." });
+          const receiver = String(body.receivedBy || "").trim() || sess.username;
           const info = db.prepare(
-            "INSERT INTO payment_received (event_id, cycle_index, cycle_name, amount, received_by, notes) VALUES (?,?,?,?,?,?)"
-          ).run(evRow.id, Number(body.cycleIndex)||0, String(body.cycleName||"").trim(), amount, sess.username, String(body.notes||"").trim()||null);
+            "INSERT INTO payment_received (event_id, cycle_index, cycle_name, amount, mode, receiver_type, received_by, notes) VALUES (?,?,?,?,?,?,?,?)"
+          ).run(evRow.id, Number(body.cycleIndex)||0, String(body.cycleName||"").trim(), amount, String(body.mode || "cash"), String(body.receiverType || "sales"), receiver, String(body.notes||"").trim()||null);
           auditLog(sess, req, "CREATE", "payment-received", id, `₹${amount} for ${body.cycleName||"cycle"}`);
           // Log to field log too
           const ip = req.socket.remoteAddress || req.headers["x-forwarded-for"] || null;
           db.prepare("INSERT INTO event_field_log (event_client_id,event_name,username,action,section,field,old_value,new_value,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?,?,?)")
             .run(id, evRow.event_name, sess.username, "update", "payment_schedule",
               `Payment Received: ${body.cycleName||"cycle"}`, null, `₹${amount} marked received`, ip, (req.headers["user-agent"]||"").slice(0,200));
+          return sendJson(res, 200, { ok: true, id: info.lastInsertRowid });
+        }
+      }
+      if (sub.length === 5 && sub[2] === "payment-received" && sub[4] === "mail" && m === "POST") {
+        const evRow = findEventRow(id);
+        if (!evRow) return sendJson(res, 404, { error: "Not found" });
+        const paymentId = Number(decodeURIComponent(sub[3]));
+        const payment = db.prepare("SELECT * FROM payment_received WHERE id = ? AND event_id = ?").get(paymentId, evRow.id);
+        if (!payment) return sendJson(res, 404, { error: "Payment not found." });
+        const ev = mapEventRow(evRow);
+        const email = ev.invoiceKyc?.email || "";
+        if (!email) return sendJson(res, 400, { error: "Client email is not available for this event." });
+        db.prepare("UPDATE payment_received SET mail_sent_at=CURRENT_TIMESTAMP, mail_sent_to=?, mail_sent_by=? WHERE id=?").run(email, sess.username, paymentId);
+        auditLog(sess, req, "SEND_MAIL", "payment-received", id, `receipt mail to ${email}`);
+        return sendJson(res, 200, { ok: true, to: email, localOnly: true });
+      }
+      if (sub.length === 3 && sub[2] === "in-house-charges") {
+        const evRow = findEventRow(id);
+        if (!evRow) return sendJson(res, 404, { error: "Not found" });
+        if (m === "GET") {
+          return sendJson(res, 200, db.prepare("SELECT * FROM in_house_charges WHERE event_id = ? ORDER BY created_at").all(evRow.id));
+        }
+        if (m === "POST") {
+          const body = (await readBody(req)) || {};
+          const amount = Number(body.amount);
+          if (!(amount > 0)) return sendJson(res, 400, { error: "Amount required." });
+          const info = db.prepare("INSERT INTO in_house_charges (event_id, head, category, person, description, amount, created_by) VALUES (?,?,?,?,?,?,?)")
+            .run(evRow.id, String(body.head || body.category || "Other"), String(body.category || body.head || "Other"), String(body.person || ""), String(body.description || ""), amount, sess.username);
+          auditLog(sess, req, "CREATE", "in-house-charge", id, `₹${amount}`);
           return sendJson(res, 200, { ok: true, id: info.lastInsertRowid });
         }
       }
@@ -1242,7 +1338,7 @@ async function handleApi(req, res, url) {
 
 function serveStatic(req, res, url) {
   let pathname = decodeURIComponent(url.pathname);
-  if (pathname === "/") pathname = "/index.html";
+  if (pathname === "/") pathname = "/dashboard.html";
 
   if (pathname === "/__livereload.js") {
     res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
@@ -1268,7 +1364,7 @@ function serveStatic(req, res, url) {
       });
       return;
     }
-    headers["Cache-Control"] = "no-cache";
+    headers["Cache-Control"] = url.search ? "public, max-age=31536000, immutable" : "public, max-age=3600";
     res.writeHead(200, headers);
     fs.createReadStream(filePath).pipe(res);
   });

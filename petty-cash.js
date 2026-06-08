@@ -75,7 +75,7 @@ function renderEvents(query = "") {
     const name = document.createElement("span");
     name.textContent = event.name;
     const meta = document.createElement("small");
-    meta.textContent = `${formatDate(event.date)} | ${event.location} | ${event.pax.toLocaleString("en-IN")} PAX`;
+    meta.textContent = `${ODC.eventContextText(event, { includeDays: true })} | ${event.location}`;
     option.append(name, meta);
 
     option.addEventListener("click", () => {
@@ -338,7 +338,7 @@ function getRowTotal(container) {
 
 function updateEventContext() {
   const totalBilling = selectedEvent?.totalBilling || 0;
-  eventDateText.textContent = selectedEvent ? formatDate(selectedEvent.date) : "Select event";
+  eventDateText.textContent = selectedEvent ? ODC.eventContextText(selectedEvent, { includeDays: true }) : "Select event";
   eventBillingText.textContent = moneyFormatter.format(totalBilling);
   summaryBilling.textContent = moneyFormatter.format(totalBilling);
 }
@@ -481,4 +481,12 @@ ODC.ready.then(init);
 ODC.registerSync(() => {
   masterHeads = getMasterPersons();
   renderEvents(search.value || "");
+  if (selectedEvent) {
+    const fresh = getAllEvents().find((event) => String(event.id) === String(selectedEvent.id));
+    if (fresh) {
+      selectedEvent = fresh;
+      updateEventContext();
+      loadPettyCash(fresh.id);
+    }
+  }
 });

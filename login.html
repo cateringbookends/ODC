@@ -5,34 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
-  <title>Login - Event Dashboard</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js?v=5"></script>
-  <script src="firebase-backend.js?v=5"></script>
+  <title>Sign In - ODC Event Dashboard</title>
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
-<body class="login-page">
-  <div class="login-card">
-    <div class="login-brand">
-      <span class="login-brand-dot"></span>
-      Event Dashboard
+<body class="login-body">
+  <main class="login-shell">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="logo.svg" alt="ODC" width="48" height="48" style="border-radius:10px;flex-shrink:0">
+        <div>
+          <p class="eyebrow" style="margin-bottom:2px">Outdoor Catering</p>
+          <h1 style="font-size:1.5rem;margin:0">Event Dashboard</h1>
+          <p class="login-caption">Secure operations workspace</p>
+        </div>
+      </div>
+      <form id="loginForm" class="login-form" novalidate>
+        <label class="field">
+          <span>Username</span>
+          <input type="text" id="username" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required placeholder="Enter username">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="password" name="password" autocomplete="current-password" required placeholder="Enter password">
+        </label>
+        <p id="loginError" class="login-error" hidden role="alert" aria-live="polite"></p>
+        <button type="submit" class="primary-button login-submit" id="loginBtn" style="width:100%;padding:10px 16px;font-size:0.95rem">Sign In</button>
+      </form>
     </div>
-    <h1 class="login-title">Sign in</h1>
-    <form id="loginForm" class="login-form" novalidate>
-      <div class="field-group">
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" autocomplete="username" spellcheck="false" required>
-      </div>
-      <div class="field-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" autocomplete="current-password" required>
-      </div>
-      <p id="loginError" class="login-error" hidden></p>
-      <button type="submit" class="primary-button login-submit" id="loginBtn">Sign in</button>
-    </form>
-  </div>
-  <script src="login.js?v=5"></script>
+  </main>
+  <script src="login.js?v=7"></script>
 </body>
 </html>

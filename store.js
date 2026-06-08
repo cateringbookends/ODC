@@ -12,7 +12,10 @@
 window.ODC = (function () {
   const boots = [];
   const syncFns = [];
+  const liveFns = [];
   let online = true;
+  let liveVersion = "";
+  let liveTimer = null;
   let resolveReady;
   const ready = new Promise((res) => { resolveReady = res; });
 
@@ -96,7 +99,10 @@ window.ODC = (function () {
     return iso;
   }
   function isoToDmy(iso) {
-    const m = String(iso == null ? "" : iso).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const text = String(iso == null ? "" : iso).trim();
+    const dmy = text.match(/^(\d{2})-(\d{2})-(\d{4})/);
+    if (dmy) return dmy[0];
+    const m = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
   }
   function syncDatePicker(input, picker) {
@@ -174,24 +180,72 @@ window.ODC = (function () {
     catch (e) { console.warn("localStorage write failed:", e && e.message); }
   }
 
+  const inrCompact = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
+  function eventContextText(event, options = {}) {
+    const date = isoToDmy(event?.date || event?.eventDate || "") || "No date";
+    const pax = Number(event?.pax) || 0;
+    const cost = Number(event?.costPerPax) || 0;
+    const parts = [
+      date,
+      `${pax.toLocaleString("en-IN")} PAX`,
+      `${inrCompact.format(cost)} / PAX`
+    ];
+    if (options.includeDays && Number(event?.days) > 1) parts.splice(2, 0, `${Number(event.days)} days`);
+    return parts.join(" | ");
+  }
+
   function addBoot(fn) { boots.push(fn); }
+  function addLiveRefresh(fn) { liveFns.push(fn); }
   function registerSync(fn) { syncFns.push(fn); }
   function notifySync() {
     syncFns.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+  }
+  async function refreshLiveData() {
+    if (!liveFns.length) return;
+    await Promise.all(liveFns.map((fn) => Promise.resolve().then(fn).catch((e) => console.warn("Live refresh failed:", e && e.message))));
+    window.dispatchEvent(new CustomEvent("odc:live-data", { detail: { version: liveVersion } }));
+  }
+  async function checkLiveVersion() {
+    if (document.hidden || !navigator.onLine) return;
+    try {
+      const data = await api("GET", "/api/live/version");
+      const next = String(data && data.version || "");
+      if (!next) return;
+      if (!liveVersion) {
+        liveVersion = next;
+        return;
+      }
+      if (next !== liveVersion) {
+        liveVersion = next;
+        await refreshLiveData();
+      }
+    } catch { /* live polling should never disturb normal page work */ }
+  }
+  function startLivePolling() {
+    if (liveTimer) return;
+    window.addEventListener("odc:live-data", () => {
+      document.body.dataset.liveUpdatedAt = new Date().toISOString();
+    });
+    checkLiveVersion();
+    liveTimer = window.setInterval(checkLiveVersion, 6000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) checkLiveVersion();
+    });
   }
 
   function boot() {
     resolveReady();
     notifySync();
     Promise.all(boots.map((b) => b()))
-      .then(() => { online = true; notifySync(); })
+      .then(() => { online = true; notifySync(); startLivePolling(); })
       .catch((e) => {
         online = false;
         console.warn("ODC running offline (using local cache):", e && e.message);
+        startLivePolling();
       });
   }
   // Boot after all in-body scripts (and their addBoot/registerSync calls) have run.
   window.addEventListener("DOMContentLoaded", boot);
 
-  return { ready, api, escapeHtml, dmyToIso, isoToDmy, attachDateMask, syncDmyDatePicker, lsGet, lsSet, addBoot, registerSync, notifySync, isOnline: () => online };
+  return { ready, api, escapeHtml, dmyToIso, isoToDmy, eventContextText, attachDateMask, syncDmyDatePicker, lsGet, lsSet, addBoot, addLiveRefresh, registerSync, notifySync, isOnline: () => online };
 })();

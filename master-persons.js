@@ -11,6 +11,7 @@ const departmentFilter = document.querySelector("#masterDepartmentFilter");
 const departmentFilterControl = document.querySelector("#departmentFilterControl");
 const selectAllDepartmentsButton = document.querySelector("#selectAllDepartments");
 const clearDepartmentsButton = document.querySelector("#clearDepartments");
+let masterStatusEl = null;
 
 let heads = getMasterPersons();
 let departmentFilterInitialized = false;
@@ -18,7 +19,10 @@ let masterViewReady = false;
 let masterDataVersion = 0;
 let lastRenderKey = "";
 let renderFrame = 0;
+let renderToken = 0;
 let preparedHeads = [];
+let showAllMasterPersons = false;
+const expandedHeads = new Set();
 
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
@@ -212,17 +216,182 @@ function scheduleRenderMasterList() {
 
 // Built entirely with DOM nodes + textContent so head/person names can never
 // inject HTML (previously interpolated straight into innerHTML).
+function buildMasterGroup(head, filteredPersons, query) {
+  const group = document.createElement("section");
+  group.className = "master-group";
+  const isExpanded = query || expandedHeads.has(head.id);
+
+  const header = document.createElement("div");
+  header.className = "master-group-header";
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "master-group-title";
+  const title = document.createElement("h2");
+  title.textContent = head.name;
+  const count = document.createElement("span");
+  count.className = "master-person-count";
+  count.textContent = `${filteredPersons.length} person${filteredPersons.length === 1 ? "" : "s"}`;
+  titleWrap.append(title, count);
+
+  const actions = document.createElement("div");
+  actions.className = "master-group-actions";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "secondary-button master-group-toggle";
+  toggle.textContent = isExpanded ? "Hide" : "View";
+  toggle.addEventListener("click", () => {
+    if (expandedHeads.has(head.id)) expandedHeads.delete(head.id);
+    else expandedHeads.add(head.id);
+    lastRenderKey = "";
+    renderMasterList();
+  });
+  const removeHead = document.createElement("button");
+  removeHead.type = "button";
+  removeHead.className = "remove-master-head";
+  removeHead.dataset.headId = head.id;
+  removeHead.setAttribute("aria-label", `Remove ${head.name}`);
+  removeHead.textContent = "Remove Head";
+  removeHead.addEventListener("click", () => {
+    heads = heads.filter((h) => h.id !== head.id);
+    saveMasterPersons(heads);
+    prepareMasterView();
+    populateDepartmentFilter();
+    renderMasterList();
+  });
+  actions.append(toggle, removeHead);
+  header.append(titleWrap, actions);
+  group.append(header);
+
+  if (!isExpanded) {
+    const preview = document.createElement("div");
+    preview.className = "master-group-preview";
+    const names = filteredPersons.slice(0, 6).map(({ person }) => person.name || person.personName || "").filter(Boolean);
+    preview.textContent = names.length ? names.join(", ") + (filteredPersons.length > names.length ? "..." : "") : "No persons added";
+    group.append(preview);
+    return group;
+  }
+
+  const table = document.createElement("div");
+  table.className = "master-person-table";
+
+  const tableHead = document.createElement("div");
+  tableHead.className = "master-person-row master-person-row-head";
+  ["Name", "Code", "Department", "Location", "Edit", "Delete"].forEach((label) => {
+    const cell = document.createElement("span");
+    cell.textContent = label;
+    tableHead.append(cell);
+  });
+  table.append(tableHead);
+
+  if (!filteredPersons.length) {
+    const row = document.createElement("div");
+    row.className = "master-person-row master-person-empty";
+    const span = document.createElement("span");
+    span.textContent = query ? "No matching persons in this group" : "No persons added";
+    row.append(span);
+    table.append(row);
+  } else {
+    filteredPersons.forEach(({ person, index }) => {
+      const row = document.createElement("div");
+      row.className = "master-person-row";
+
+      const nameCell = document.createElement("div");
+      nameCell.className = "master-person-name";
+      const nameText = document.createElement("span");
+      nameText.textContent = person.name || person.personName || String(person);
+      nameCell.append(nameText);
+      const meta = [person.designation].filter(Boolean).join(" | ");
+      if (meta) {
+        const metaText = document.createElement("small");
+        metaText.textContent = meta;
+        nameCell.append(metaText);
+      }
+
+      const codeCell = document.createElement("span");
+      codeCell.className = "master-person-code";
+      codeCell.textContent = person.code || "-";
+
+      const departmentCell = document.createElement("span");
+      departmentCell.className = "master-person-department";
+      departmentCell.textContent = person.department || "-";
+
+      const locationCell = document.createElement("span");
+      locationCell.className = "master-person-location";
+      locationCell.textContent = person.location || "-";
+
+      const editPerson = document.createElement("button");
+      editPerson.type = "button";
+      editPerson.className = "edit-master-person";
+      editPerson.textContent = "Edit";
+      editPerson.addEventListener("click", () => {
+        const h = heads.find((item) => item.id === head.id);
+        if (!h) return;
+        const current = h.persons[index] || {};
+        const nextName = prompt("Edit name", current.name || "");
+        if (nextName === null) return;
+        const cleanName = nextName.trim();
+        if (!cleanName) return;
+        const nextCode = prompt("Edit employee code", current.code || "");
+        if (nextCode === null) return;
+        const nextPost = prompt("Edit post / designation", current.designation || h.name);
+        if (nextPost === null) return;
+        const cleanPost = nextPost.trim() || h.name;
+        const nextDepartment = prompt("Edit department / unit", current.department || "");
+        if (nextDepartment === null) return;
+        const nextLocation = prompt("Edit location", current.location || "");
+        if (nextLocation === null) return;
+        const updatedPerson = {
+          ...current,
+          name: cleanName,
+          code: nextCode.trim(),
+          designation: cleanPost,
+          department: nextDepartment.trim(),
+          location: nextLocation.trim()
+        };
+        h.persons = h.persons.filter((_, i) => i !== index);
+        const targetHead = findOrCreateHead(cleanPost);
+        targetHead.persons.push(updatedPerson);
+        saveMasterPersons(heads);
+        prepareMasterView();
+        populateDepartmentFilter();
+        renderMasterList();
+      });
+
+      const removePerson = document.createElement("button");
+      removePerson.type = "button";
+      removePerson.className = "remove-master-person";
+      removePerson.dataset.headId = head.id;
+      removePerson.dataset.personIndex = String(index);
+      removePerson.setAttribute("aria-label", `Delete ${nameCell.textContent}`);
+      removePerson.textContent = "Delete";
+      removePerson.addEventListener("click", () => {
+        const h = heads.find((item) => item.id === head.id);
+        if (h) h.persons = h.persons.filter((_, i) => i !== index);
+        saveMasterPersons(heads);
+        prepareMasterView();
+        populateDepartmentFilter();
+        renderMasterList();
+      });
+      row.append(nameCell, codeCell, departmentCell, locationCell, editPerson, removePerson);
+      table.append(row);
+    });
+  }
+
+  group.append(table);
+  return group;
+}
+
 function renderMasterList() {
   const query = normalizeText(masterSearch?.value);
   const departments = selectedDepartments();
-  const renderKey = `${masterDataVersion}|${query}|${departments.join("\u001f")}`;
+  const renderKey = `${masterDataVersion}|${query}|${departments.join("\u001f")}|${showAllMasterPersons ? "all" : "slice"}|${[...expandedHeads].sort().join("\u001f")}`;
   if (renderKey === lastRenderKey) return;
   lastRenderKey = renderKey;
+  const token = ++renderToken;
 
   masterList.innerHTML = "";
-  const fragment = document.createDocumentFragment();
   let visibleGroups = 0;
   let visiblePeople = 0;
+  const groupsToRender = [];
 
   preparedHeads.forEach(({ head, persons }) => {
     const filteredPersons = persons.filter((entry) => {
@@ -233,147 +402,71 @@ function renderMasterList() {
     if (!filteredPersons.length) return;
     visibleGroups += 1;
     visiblePeople += filteredPersons.length;
-
-    const group = document.createElement("section");
-    group.className = "master-group";
-
-    const header = document.createElement("div");
-    header.className = "master-group-header";
-    const title = document.createElement("h2");
-    title.textContent = head.name;
-    const removeHead = document.createElement("button");
-    removeHead.type = "button";
-    removeHead.className = "remove-master-head";
-    removeHead.dataset.headId = head.id;
-    removeHead.setAttribute("aria-label", `Remove ${head.name}`);
-    removeHead.textContent = "Remove Head";
-    removeHead.addEventListener("click", () => {
-      heads = heads.filter((h) => h.id !== head.id);
-      saveMasterPersons(heads);
-      prepareMasterView();
-      populateDepartmentFilter();
-      renderMasterList();
-    });
-    header.append(title, removeHead);
-
-    const table = document.createElement("div");
-    table.className = "master-person-table";
-
-    const tableHead = document.createElement("div");
-    tableHead.className = "master-person-row master-person-row-head";
-    ["Name", "Code", "Department", "Location", "Edit", "Delete"].forEach((label) => {
-      const cell = document.createElement("span");
-      cell.textContent = label;
-      tableHead.append(cell);
-    });
-    table.append(tableHead);
-
-    if (!filteredPersons.length) {
-      const row = document.createElement("div");
-      row.className = "master-person-row master-person-empty";
-      const span = document.createElement("span");
-      span.textContent = query ? "No matching persons in this group" : "No persons added";
-      row.append(span);
-      table.append(row);
-    } else {
-      filteredPersons.forEach(({ person, index }) => {
-        const row = document.createElement("div");
-        row.className = "master-person-row";
-
-        const nameCell = document.createElement("div");
-        nameCell.className = "master-person-name";
-        const nameText = document.createElement("span");
-        nameText.textContent = person.name || person.personName || String(person);
-        nameCell.append(nameText);
-        const meta = [person.designation].filter(Boolean).join(" | ");
-        if (meta) {
-          const metaText = document.createElement("small");
-          metaText.textContent = meta;
-          nameCell.append(metaText);
-        }
-
-        const codeCell = document.createElement("span");
-        codeCell.className = "master-person-code";
-        codeCell.textContent = person.code || "-";
-
-        const departmentCell = document.createElement("span");
-        departmentCell.className = "master-person-department";
-        departmentCell.textContent = person.department || "-";
-
-        const locationCell = document.createElement("span");
-        locationCell.className = "master-person-location";
-        locationCell.textContent = person.location || "-";
-
-        const editPerson = document.createElement("button");
-        editPerson.type = "button";
-        editPerson.className = "edit-master-person";
-        editPerson.textContent = "Edit";
-        editPerson.addEventListener("click", () => {
-          const h = heads.find((item) => item.id === head.id);
-          if (!h) return;
-          const current = h.persons[index] || {};
-          const nextName = prompt("Edit name", current.name || "");
-          if (nextName === null) return;
-          const cleanName = nextName.trim();
-          if (!cleanName) return;
-          const nextCode = prompt("Edit employee code", current.code || "");
-          if (nextCode === null) return;
-          const nextPost = prompt("Edit post / designation", current.designation || h.name);
-          if (nextPost === null) return;
-          const cleanPost = nextPost.trim() || h.name;
-          const nextDepartment = prompt("Edit department / unit", current.department || "");
-          if (nextDepartment === null) return;
-          const nextLocation = prompt("Edit location", current.location || "");
-          if (nextLocation === null) return;
-          const updatedPerson = {
-            ...current,
-            name: cleanName,
-            code: nextCode.trim(),
-            designation: cleanPost,
-            department: nextDepartment.trim(),
-            location: nextLocation.trim()
-          };
-          h.persons = h.persons.filter((_, i) => i !== index);
-          const targetHead = findOrCreateHead(cleanPost);
-          targetHead.persons.push(updatedPerson);
-          saveMasterPersons(heads);
-          prepareMasterView();
-          populateDepartmentFilter();
-          renderMasterList();
-        });
-
-        const removePerson = document.createElement("button");
-        removePerson.type = "button";
-        removePerson.className = "remove-master-person";
-        removePerson.dataset.headId = head.id;
-        removePerson.dataset.personIndex = String(index);
-        removePerson.setAttribute("aria-label", `Delete ${nameCell.textContent}`);
-        removePerson.textContent = "Delete";
-        removePerson.addEventListener("click", () => {
-          const h = heads.find((item) => item.id === head.id);
-          if (h) h.persons = h.persons.filter((_, i) => i !== index);
-          saveMasterPersons(heads);
-          prepareMasterView();
-          populateDepartmentFilter();
-          renderMasterList();
-        });
-        row.append(nameCell, codeCell, departmentCell, locationCell, editPerson, removePerson);
-        table.append(row);
-      });
-    }
-
-    group.append(header, table);
-    fragment.append(group);
+    groupsToRender.push({ head, filteredPersons });
   });
 
   if (!visibleGroups) {
     const empty = document.createElement("p");
     empty.className = "form-status";
     empty.textContent = "No matching master persons.";
-    fragment.append(empty);
+    masterList.append(empty);
+    return;
   }
 
-  masterList.append(fragment);
+  const totalGroups = groupsToRender.length;
+  const totalPeople = visiblePeople;
+  const summary = document.createElement("div");
+  summary.className = "master-list-summary";
+  summary.textContent = `${totalGroups} posts | ${totalPeople} people`;
+  masterList.append(summary);
+
+  if (query && !showAllMasterPersons) {
+    const initialGroups = [];
+    let initialPeople = 0;
+    for (const item of groupsToRender) {
+      if (initialPeople >= 140) break;
+      const remaining = 140 - initialPeople;
+      const filteredPersons = item.filteredPersons.length > remaining
+        ? item.filteredPersons.slice(0, remaining)
+        : item.filteredPersons;
+      initialGroups.push({ head: item.head, filteredPersons });
+      initialPeople += filteredPersons.length;
+    }
+    if (initialGroups.length < groupsToRender.length) {
+      groupsToRender.length = 0;
+      groupsToRender.push(...initialGroups);
+      const notice = document.createElement("div");
+      notice.className = "master-list-notice";
+      const text = document.createElement("span");
+      text.textContent = `Showing ${initialPeople} of ${totalPeople} people across ${totalGroups} posts.`;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary-button";
+      button.textContent = "Show All";
+      button.addEventListener("click", () => {
+        showAllMasterPersons = true;
+        lastRenderKey = "";
+        renderMasterList();
+      });
+      notice.append(text, button);
+      masterList.append(notice);
+    }
+  }
+
+  const batchSize = 8;
+  let index = 0;
+  function appendBatch() {
+    if (token !== renderToken) return;
+    const fragment = document.createDocumentFragment();
+    const end = Math.min(index + batchSize, groupsToRender.length);
+    for (; index < end; index += 1) {
+      const item = groupsToRender[index];
+      fragment.append(buildMasterGroup(item.head, item.filteredPersons, query));
+    }
+    masterList.append(fragment);
+    if (index < groupsToRender.length) requestAnimationFrame(appendBatch);
+  }
+  appendBatch();
 }
 
 function addPerson() {
@@ -382,15 +475,20 @@ function addPerson() {
   const personCode = personCodeInput.value.trim();
   const personDepartment = personDepartmentInput.value.trim();
   const personLocation = personLocationInput.value.trim();
-  if (!headName || !personName) return;
+  if (!headName || !personName) {
+    setMasterStatus("Post/designation and person name are required.", true);
+    return;
+  }
 
   const head = findOrCreateHead(headName);
-  if (!head.persons.some((person) => String(person.name || person.personName || "").toLowerCase() === personName.toLowerCase() && String(person.code || "").toLowerCase() === personCode.toLowerCase())) {
+  const exists = head.persons.some((person) => String(person.name || person.personName || "").toLowerCase() === personName.toLowerCase() && String(person.code || "").toLowerCase() === personCode.toLowerCase());
+  if (!exists) {
     head.persons.push({ name: personName, code: personCode, designation: headName, department: personDepartment, location: personLocation });
     head.persons.sort(sortPersonsByName);
   }
 
   saveMasterPersons(heads);
+  setMasterStatus(exists ? "Already exists. No duplicate added." : `Added ${personName} under ${headName}.`);
   personNameInput.value = "";
   personCodeInput.value = "";
   personDepartmentInput.value = "";
@@ -398,6 +496,23 @@ function addPerson() {
   prepareMasterView();
   populateDepartmentFilter();
   renderMasterList();
+}
+
+function ensureMasterStatus() {
+  if (masterStatusEl || !masterForm) return;
+  masterStatusEl = document.createElement("p");
+  masterStatusEl.className = "form-status";
+  masterStatusEl.setAttribute("aria-live", "polite");
+  const schedule = masterForm.querySelector(".payment-schedule");
+  masterForm.insertBefore(masterStatusEl, schedule || null);
+}
+
+function setMasterStatus(message, isError = false) {
+  ensureMasterStatus();
+  if (!masterStatusEl) return;
+  masterStatusEl.hidden = !message;
+  masterStatusEl.textContent = message || "";
+  masterStatusEl.classList.toggle("error", isError);
 }
 
 addPersonButton.addEventListener("click", addPerson);
@@ -424,6 +539,7 @@ document.addEventListener("click", (event) => {
 });
 
 function init() {
+  ensureMasterStatus();
   heads = getMasterPersons();
   prepareMasterView();
   populateDepartmentFilter();

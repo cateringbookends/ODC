@@ -4,45 +4,41 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'none'">
-  <title>Event Log</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+  <title>Event Log - ODC</title>
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
+  <script src="auth-guard.js?v=8"></script>
   <header class="top-nav">
     <div class="top-nav-bar">
-      <a class="brand" href="index.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Log</a>
-      <a id="backLink" href="saved-events.html" style="font-size:.82rem;color:var(--muted);text-decoration:none">← Back to Events</a>
+      <a class="brand" href="dashboard.html"><img src="logo.svg" alt="ODC" width="32" height="32" style="border-radius:8px;vertical-align:middle;margin-right:4px"> Event Dashboard</a>
+      <div id="nav-user" class="nav-user"></div>
     </div>
+    <nav class="top-nav-links" aria-label="Primary navigation">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="index.html">Sales Intake</a>
+      <a href="saved-events.html">Saved Events</a>
+      <a href="pre-cost-planning.html">Pre Cost Planning</a>
+      <a href="petty-cash.html">Petty Cash</a>
+      <a href="financial-control.html">Financial Control</a>
+      <a href="master-persons.html">Master Persons</a>
+      <a href="bill-submission.html">Bill Submission</a>
+      <a href="analytics.html">Analytics</a>
+      <a href="admin.html" data-admin-only>Admin</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
   </header>
 
-  <main style="max-width:900px;margin:0 auto;padding:24px 16px">
-
-    <!-- Event Header -->
-    <div id="eventHeader" style="margin-bottom:1.5rem">
-      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-        <h1 id="eventName" style="font-size:1.5rem;margin:0">Loading…</h1>
-        <span id="eventStatus" class="bill-status-badge"></span>
+  <main class="app-shell planning-shell">
+    <section class="panel">
+      <div id="logContent">
+        <p class="form-status" id="logStatus">Loading…</p>
       </div>
-      <p id="eventMeta" style="color:var(--muted);font-size:.85rem;margin:.3rem 0 0"></p>
-    </div>
-
-    <!-- Filter bar -->
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem;align-items:center">
-      <span style="font-size:.8rem;color:var(--muted);align-self:center">Filter:</span>
-      <button class="filter-btn secondary-button active" data-filter="all"   style="font-size:.75rem;padding:.25rem .7rem">All</button>
-      <button class="filter-btn secondary-button" data-filter="core"         style="font-size:.75rem;padding:.25rem .7rem">Event Details</button>
-      <button class="filter-btn secondary-button" data-filter="kyc"          style="font-size:.75rem;padding:.25rem .7rem">KYC</button>
-      <button class="filter-btn secondary-button" data-filter="payment_schedule" style="font-size:.75rem;padding:.25rem .7rem">Payment</button>
-      <button class="filter-btn secondary-button" data-filter="petty_cash"   style="font-size:.75rem;padding:.25rem .7rem">Petty Cash</button>
-      <button class="filter-btn secondary-button" data-filter="pre_cost"     style="font-size:.75rem;padding:.25rem .7rem">Pre-Cost</button>
-      <input type="search" id="logSearch" placeholder="Search field or name…" style="margin-left:auto;padding:.3rem .6rem;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:.82rem;width:200px">
-    </div>
-
-    <!-- Log timeline -->
-    <div id="logBody"></div>
-
+    </section>
   </main>
-  <script src="event-log.js?v=5"></script>
+
+  <script src="store.js?v=5"></script>
+  <script src="event-log.js?v=6"></script>
 </body>
 </html>
