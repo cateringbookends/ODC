@@ -131,7 +131,7 @@ function render(ev, preCost, petty, received, bills, inHouse) {
       </div>
       <form class="financial-form fc-inline-form" id="paymentForm">
         <label><span>Cycle</span><select id="payCycle">${(ev.paymentSchedule || []).map((c, i) => `<option value="${i}" data-amount="${num(c.amount)}">${esc(c.label || "Payment")} - ${money(c.amount)}</option>`).join("") || `<option value="0" data-amount="0">Payment</option>`}</select></label>
-        <label><span>Amount</span><input id="payAmount" type="number" min="1" step="1" required></label>
+        <label><span>Amount</span><input id="payAmount" type="number" min="0.01" step="0.01" required></label>
         <label><span>Mode</span><select id="payMode"><option value="cash">Cash</option><option value="online">Online</option><option value="cheque">Cheque</option><option value="other">Other</option></select></label>
         <label><span>Received Type</span><select id="payReceiverType"><option value="sales">Sales</option><option value="other">Other</option></select></label>
         <label><span>Received By</span><input id="payReceiver" placeholder="Name"></label>
@@ -246,4 +246,30 @@ function bindForms(ev) {
       btn.disabled = true;
       btn.textContent = "Sending...";
       try {
-        await ODC.api("POST", `/api/events/${encodeURIComponent(ev.id)}/payment-received/${encodeURIComponent(bt
+        await ODC.api("POST", `/api/events/${encodeURIComponent(ev.id)}/payment-received/${encodeURIComponent(btn.dataset.paymentId)}/mail`, { email: to.trim() });
+        btn.textContent = "Sent";
+        await loadSelected();
+      } catch (err) {
+        alert(err.message || "Mail failed.");
+        btn.disabled = false;
+        btn.textContent = "Preview & Send";
+      }
+    });
+  });
+}
+
+init().catch((err) => {
+  statusBox.hidden = false;
+  statusBox.textContent = "Error: " + err.message;
+});
+
+ODC.registerSync(async () => {
+  if (document.hidden) return;
+  const active = document.activeElement;
+  if (active && ["INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)) return;
+  const selected = eventSelect.value;
+  events = await ODC.api("GET", "/api/events");
+  events.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  if (selected && events.some((ev) => ev.id === selected)) eventSelect.value = selected;
+  await loadSelected();
+});
