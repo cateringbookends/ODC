@@ -506,4 +506,15 @@ equipmentTransportationCharge.addEventListener("input", updateCostTotals);
 if (planningForm) planningForm.addEventListener("submit", (e) => e.preventDefault());
 
 document.addEventListener("click", (event) => { if (!event.target.closest(".event-picker")) closeMenu(); });
-document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu({ restoreFocus: true }); 
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu({ restoreFocus: true }); });
+
+function init() {
+  document.querySelectorAll(".date-dmy").forEach((el) => ODC.attachDateMask(el));
+  ensureSaveBar();
+  renderEvents();
+  updatePlanningContext();
+  updateCostTotals();
+}
+
+ODC.ready.then(init);
+ODC.registerSync(() => renderEvents(search.value || ""));

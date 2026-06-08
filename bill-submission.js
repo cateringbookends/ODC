@@ -573,4 +573,7 @@ async function loadBillSubmissionPage() {
 ODC.ready.then(loadBillSubmissionPage);
 ODC.registerSync(() => {
   if (document.hidden) return;
-  const active = document.activeElemen
+  const active = document.activeElement;
+  if (active && ["INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)) return;
+  loadBillSubmissionPage();
+});

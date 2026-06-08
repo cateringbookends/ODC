@@ -38,3 +38,28 @@ verify-ui.js
 verify-screenshots/
 
 .vercel
+.vercel/
+
+# SSH keys — never commit credentials
+.ssh/
+
+# Claude local settings
+.claude/
+
+# Dev/audit scripts (Playwright-generated)
+scripts/
+
+# Test & debug screenshots
+*.png
+
+# Report generation scripts & outputs
+gen_report.py
+generate_report.py
+import_empl_list_to_master.py
+regroup_master_by_post.py
+ODC_Executive_One_Page_Report.*
+ODC_Product_OnePager.*
+report_print.html
+
+# Wrongly-named gitignore files
+E:ODC.gitignore
