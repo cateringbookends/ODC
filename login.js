@@ -18,7 +18,7 @@
 
   // ---- LOCAL SERVER fallback (Firebase not configured) ----
   if (!window.FIREBASE_READY) {
-    fetch("/api/auth/me", { credentials: "same-origin" })
+    fetch("api/auth/me", { credentials: "same-origin" })
       .then(function (r) { if (r.ok) window.location.replace(getNextUrl()); })
       .catch(function () {});
 
@@ -30,7 +30,7 @@
       var username = document.getElementById("username").value.trim();
       var password = document.getElementById("password").value;
 
-      fetch("/api/auth/login", {
+      fetch("api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",

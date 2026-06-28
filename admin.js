@@ -15,7 +15,7 @@ document.getElementById("adminTabs").addEventListener("click", e => {
 });
 
 async function api(method, path, body) {
-  const res = await fetch(path, {
+  const res = await fetch(path.replace(/^\//, ""), {
     method,
     credentials: "same-origin",
     headers: body !== undefined ? { "Content-Type": "application/json" } : {},

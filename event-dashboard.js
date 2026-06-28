@@ -23,10 +23,10 @@ async function loadDashboard() {
 
   try {
     const [evRes, receivedRes, preCostRes, pettyRes] = await Promise.all([
-      fetch("/api/events/" + encodeURIComponent(eventId), { credentials: "same-origin" }),
-      fetch("/api/events/" + encodeURIComponent(eventId) + "/payment-received", { credentials: "same-origin" }),
-      fetch("/api/events/" + encodeURIComponent(eventId) + "/pre-cost", { credentials: "same-origin" }),
-      fetch("/api/events/" + encodeURIComponent(eventId) + "/petty-cash", { credentials: "same-origin" })
+      fetch("api/events/" + encodeURIComponent(eventId), { credentials: "same-origin" }),
+      fetch("api/events/" + encodeURIComponent(eventId) + "/payment-received", { credentials: "same-origin" }),
+      fetch("api/events/" + encodeURIComponent(eventId) + "/pre-cost", { credentials: "same-origin" }),
+      fetch("api/events/" + encodeURIComponent(eventId) + "/petty-cash", { credentials: "same-origin" })
     ]);
 
     if (!evRes.ok) {
@@ -368,7 +368,7 @@ async function markReceived(btn) {
   btn.disabled = true;
   btn.textContent = "Saving…";
   try {
-    const res = await fetch("/api/events/" + encodeURIComponent(eventId) + "/payment-received", {
+    const res = await fetch("api/events/" + encodeURIComponent(eventId) + "/payment-received", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",

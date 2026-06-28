@@ -23,7 +23,7 @@ window.ODC = (function () {
   async function api(method, pathName, body) {
     // ---- LOCAL SERVER fallback (Firebase not configured) ----
     if (!window.FIREBASE_READY) {
-      const res = await fetch(pathName, {
+      const res = await fetch(pathName.replace(/^\//, ""), {
         method,
         headers: body !== undefined ? { "Content-Type": "application/json" } : {},
         body: body !== undefined ? JSON.stringify(body) : undefined,

@@ -7,7 +7,7 @@ function isBillHeadMaster(head) {
 }
 
 async function apiFetch(method, path, body) {
-  const res = await fetch(path, {
+  const res = await fetch(path.replace(/^\//, ""), {
     method,
     credentials: "same-origin",
     headers: body !== undefined ? { "Content-Type": "application/json" } : {},

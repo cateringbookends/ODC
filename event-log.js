@@ -22,8 +22,8 @@ async function loadLog() {
   statusEl.textContent = "Loading…";
   try {
     const [headerRes, logRes] = await Promise.all([
-      fetch("/api/events/" + encodeURIComponent(eventId) + "/header", { credentials: "same-origin" }),
-      fetch("/api/events/" + encodeURIComponent(eventId) + "/log", { credentials: "same-origin" })
+      fetch("api/events/" + encodeURIComponent(eventId) + "/header", { credentials: "same-origin" }),
+      fetch("api/events/" + encodeURIComponent(eventId) + "/log", { credentials: "same-origin" })
     ]);
 
     const header = headerRes.ok ? await headerRes.json() : null;

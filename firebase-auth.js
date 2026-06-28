@@ -5,7 +5,7 @@
 
   // ---- LOCAL SERVER fallback (Firebase not configured) ----
   if (!window.FIREBASE_READY) {
-    fetch("/api/auth/me", { credentials: "same-origin" })
+    fetch("api/auth/me", { credentials: "same-origin" })
       .then(function (r) {
         if (r.status === 401) { window.location.replace("login.html"); return null; }
         return r.json();
@@ -77,7 +77,7 @@
       if (window.FIREBASE_READY && window.ODC_AUTH) {
         ODC_AUTH.signOut().then(function () { window.location.replace("login.html"); });
       } else {
-        fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" })
+        fetch("api/auth/logout", { method: "POST", credentials: "same-origin" })
           .finally(function () { window.location.replace("login.html"); });
       }
     });

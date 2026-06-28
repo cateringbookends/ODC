@@ -124,7 +124,7 @@
       logoutBtn.addEventListener("click", async () => {
         showLoader("Signing out");
         sessionStorage.removeItem(USER_CACHE_KEY);
-        try { await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }); } catch { /* ignore */ }
+        try { await fetch("api/auth/logout", { method: "POST", credentials: "same-origin" }); } catch { /* ignore */ }
         location.href = "login.html";
       });
       navUser.append(avatar, identity, logoutBtn);
@@ -142,7 +142,7 @@
       title: document.title || ""
     };
     try {
-      fetch("/api/admin/page-hit", {
+      fetch("api/admin/page-hit", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -158,7 +158,7 @@
   }
 
   try {
-    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+    const res = await fetch("api/auth/me", { credentials: "same-origin" });
     if (res.status === 401) {
       sessionStorage.removeItem(USER_CACHE_KEY);
       const next = encodeURIComponent(location.pathname + location.search);
