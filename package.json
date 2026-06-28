@@ -1,18 +1,17 @@
 {
   "name": "odc-event-dashboard",
-  "version": "1.0.0",
-  "description": "ODC Sales Event Dashboard — static front-end + zero-dependency Node/SQLite server with live reload.",
+  "version": "2.0.0",
+  "description": "ODC Sales Event Dashboard — static front-end + Node.js/PostgreSQL server with live reload.",
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
-    "test": "node smoke-test.js",
-    "google:status": "node setup-google-sheets.js --status",
-    "google:setup": "node setup-google-sheets.js",
-    "google:sync": "node setup-google-sheets.js --sync"
+    "dev": "node server.js"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.13.3"
   },
   "devDependencies": {
     "playwright": "^1.60.0"

@@ -168,4 +168,41 @@
             </label>
             <label class="field">
               <span>Refervan</span>
-              <input type="number" id="refervanCharge" min="0" step="0.01" placeholder="0.
+              <input type="number" id="refervanCharge" min="0" step="0.01" placeholder="0.00">
+            </label>
+            <label class="field">
+              <span>Equipment Transportation</span>
+              <input type="number" id="equipmentTransportationCharge" min="0" step="0.01" placeholder="0.00">
+            </label>
+          </div>
+        </section>
+
+        <!-- ── Cost Summary ──────────────────────────── -->
+        <section class="pc-section pc-summary-section">
+          <div class="pc-section-head">
+            <p class="eyebrow">Summary</p>
+            <h2>Cost Overview</h2>
+          </div>
+          <div class="pc-grid pc-grid-2">
+            <label class="field total-cost-field">
+              <span>Total Cost</span>
+              <output class="cost-output total-cost-output" id="totalPlanningCost">Rs. 0.00</output>
+            </label>
+            <label class="field total-cost-field">
+              <span>Profit / Loss</span>
+              <output class="cost-output profit-loss-output" id="profitLoss">Rs. 0.00</output>
+            </label>
+          </div>
+        </section>
+
+        <div id="planningFinalRow"></div>
+      </form>
+    </section>
+  </main>
+
+  <script src="store.js?v=5"></script>
+  <script src="data.js?v=5"></script>
+  <script src="event-store.js?v=5"></script>
+  <script src="pre-cost-planning.js?v=5"></script>
+</body>
+</html>
