@@ -125,7 +125,7 @@
         showLoader("Signing out");
         sessionStorage.removeItem(USER_CACHE_KEY);
         try { await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }); } catch { /* ignore */ }
-        location.href = "/login.html";
+        location.href = "login.html";
       });
       navUser.append(avatar, identity, logoutBtn);
     }
@@ -162,7 +162,7 @@
     if (res.status === 401) {
       sessionStorage.removeItem(USER_CACHE_KEY);
       const next = encodeURIComponent(location.pathname + location.search);
-      location.replace("/login.html?next=" + next);
+      location.replace("login.html?next=" + next);
       return;
     }
     if (res.ok) {

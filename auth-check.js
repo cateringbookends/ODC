@@ -6,7 +6,7 @@
 
   fetch("/api/auth/me", { credentials: "same-origin" })
     .then(function (r) {
-      if (r.status === 401) { window.location.replace("/login.html"); throw null; }
+      if (r.status === 401) { window.location.replace("login.html"); throw null; }
       if (!r.ok) { restore(); throw null; }
       return r.json();
     })
@@ -38,7 +38,7 @@
         btn.textContent = "Logout";
         btn.addEventListener("click", function () {
           fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" })
-            .finally(function () { window.location.replace("/login.html"); });
+            .finally(function () { window.location.replace("login.html"); });
         });
 
         el.appendChild(span);
