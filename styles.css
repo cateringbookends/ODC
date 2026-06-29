@@ -159,8 +159,7 @@ h3 { font-size: 0.95rem; font-weight: 700; color: var(--ink); }
   position: relative;
 }
 .top-nav-links::-webkit-scrollbar { display: none; }
-.top-nav-links:not([data-ready="true"]) { opacity: 0; }
-.top-nav-links[data-ready="true"] { opacity: 1; transition: opacity 0.12s ease; }
+.top-nav-links { opacity: 1; }
 
 .top-nav-links a {
   flex: 0 0 auto;

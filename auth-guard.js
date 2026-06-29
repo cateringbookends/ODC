@@ -174,7 +174,11 @@
         window.setTimeout(() => recordPageView(user), 300);
       });
     }
-  } catch { /* network error, show page offline */ }
+  } catch {
+    sessionStorage.removeItem(USER_CACHE_KEY);
+    location.replace("login.html");
+    return;
+  }
   document.body.style.visibility = "";
   onReady(() => window.setTimeout(hideLoader, 220));
 })();
