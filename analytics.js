@@ -74,10 +74,20 @@ function destroyChart(id) {
   if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
 }
 
+// Reuses the existing Chart instance (same canvas, same chart type) via .update()
+// instead of destroy+recreate — avoids a full teardown/GC/repaint of every chart on
+// each filter interaction, now that the surrounding shell is only built once (see render()).
 function makeChart(id, config) {
-  destroyChart(id);
   const canvas = document.getElementById(id);
   if (!canvas || !window.Chart) return;
+  const existing = chartInstances[id];
+  if (existing && existing.config.type === config.type) {
+    existing.data = config.data;
+    existing.options = config.options;
+    existing.update();
+    return;
+  }
+  destroyChart(id);
   chartInstances[id] = new Chart(canvas.getContext("2d"), config);
 }
 
@@ -124,6 +134,14 @@ function buildFilterBar() {
       if (filterMode !== "custom") render(allEvents);
     });
   });
+  var applyBtn = bar.querySelector("#anApply");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", function() {
+      customFrom = (bar.querySelector("#anFrom") || {}).value || "";
+      customTo   = (bar.querySelector("#anTo")   || {}).value || "";
+      render(allEvents);
+    });
+  }
   return bar;
 }
 
@@ -131,7 +149,7 @@ function buildShell(total) {
   return '<div class="an-page-header"><div>' +
     '<p class="eyebrow">Operational Analytics</p>' +
     '<h1 class="an-page-title">Event Intelligence</h1>' +
-    '<p class="an-page-sub">' + total + ' event' + (total !== 1 ? "s" : "") + ' in selected range</p>' +
+    '<p class="an-page-sub" id="anEventCount">' + total + ' event' + (total !== 1 ? "s" : "") + ' in selected range</p>' +
     '</div></div>' +
     '<div class="an-kpi-grid" id="anKpiGrid"></div>' +
     '<div class="an-chart-row">' +
@@ -151,10 +169,21 @@ function buildShell(total) {
     '<div class="an-table-card"><div class="an-chart-head"><p class="eyebrow">Leaderboard</p><h2>Top 20 Events by Billing</h2></div><div id="anTopBody"></div></div>';
 }
 
+let shellBuilt = false;
+let currentFiltered = [];
+
 function render(events) {
   var filtered = applyDateFilter(events);
+  currentFiltered = filtered;
   statusEl.hidden = true;
-  contentEl.innerHTML = buildShell(filtered.length);
+  if (!shellBuilt) {
+    contentEl.innerHTML = buildShell(filtered.length);
+    shellBuilt = true;
+    bindExport();
+  } else {
+    var countEl = document.getElementById("anEventCount");
+    if (countEl) countEl.textContent = filtered.length + " event" + (filtered.length !== 1 ? "s" : "") + " in selected range";
+  }
   buildKpis(filtered);
   buildRevenueChart(filtered);
   buildStatusChart(filtered);
@@ -165,15 +194,6 @@ function render(events) {
   buildZoneChart(filtered);
   buildOverdueTable(filtered);
   buildTopEventsTable(filtered);
-  bindExport(filtered);
-  var applyBtn = document.getElementById("anApply");
-  if (applyBtn) {
-    applyBtn.addEventListener("click", function() {
-      customFrom = (document.getElementById("anFrom") || {}).value || "";
-      customTo   = (document.getElementById("anTo")   || {}).value || "";
-      render(allEvents);
-    });
-  }
 }
 
 function buildKpis(filtered) {
@@ -386,12 +406,12 @@ async function exportXlsx(events) {
 
 function exportPdf() { window.print(); }
 
-function bindExport(events) {
+function bindExport() {
   var c = document.getElementById("exportCsv");
   var x = document.getElementById("exportXlsx");
   var p = document.getElementById("exportPdf");
-  if (c) c.addEventListener("click", function(){ exportCsv(events); });
-  if (x) x.addEventListener("click", function(){ exportXlsx(events); });
+  if (c) c.addEventListener("click", function(){ exportCsv(currentFiltered); });
+  if (x) x.addEventListener("click", function(){ exportXlsx(currentFiltered); });
   if (p) p.addEventListener("click", exportPdf);
 }
 

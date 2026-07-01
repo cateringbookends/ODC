@@ -6,6 +6,7 @@ const newEventLink = document.querySelector("#newEventLink");
 const moneyFormatter = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const STATUSES = ["open", "planning", "completed", "cancelled"];
 
+let dataVersion = 0;
 let query = "";
 let filterStatus = "";
 let filterDateMode = "all"; // "all" | "week" | "month" | "custom"
@@ -153,19 +154,20 @@ function metaLine(event) {
   return parts.join(" | ");
 }
 
-function renderList() {
-  const events = eventsMatching();
-  savedEventsList.innerHTML = "";
+let renderFrame = 0;
+let renderToken = 0;
+let lastRenderKey = "";
 
-  if (events.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "form-status";
-    empty.textContent = query || filterStatus || filterDateMode !== "all" ? "No matching events." : "No events saved yet.";
-    savedEventsList.append(empty);
-    return;
-  }
+function scheduleRenderList() {
+  if (renderFrame) cancelAnimationFrame(renderFrame);
+  renderFrame = requestAnimationFrame(() => {
+    renderFrame = 0;
+    renderList();
+  });
+}
 
-  events.forEach((event) => {
+function buildEventItem(event) {
+  {
     const item = document.createElement("article");
     item.className = "saved-event-item";
 
@@ -212,7 +214,7 @@ function renderList() {
       statusSelect.append(opt);
     });
     statusSelect.value = event.status || "open";
-    statusSelect.addEventListener("change", () => { upsertEvent({ ...event, status: statusSelect.value }); renderList(); });
+    statusSelect.addEventListener("change", () => { upsertEvent({ ...event, status: statusSelect.value }); dataVersion += 1; renderList(); });
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";
@@ -242,6 +244,7 @@ function renderList() {
       delBtn.disabled = true;
       try {
         await deleteEvent(event.id);
+        dataVersion += 1;
         renderList();
       } catch (err) {
         alert(`Delete failed: ${err.message}`);
@@ -252,8 +255,38 @@ function renderList() {
 
     controls.append(statusSelect, editBtn, dashBtn, logBtn, delBtn);
     item.append(info, out, controls);
-    savedEventsList.append(item);
-  });
+    return item;
+  }
+}
+
+function renderList() {
+  const renderKey = `${dataVersion}|${query}|${filterStatus}|${filterDateMode}|${filterFrom}|${filterTo}`;
+  if (renderKey === lastRenderKey) return;
+  lastRenderKey = renderKey;
+  const token = ++renderToken;
+
+  const events = eventsMatching();
+  savedEventsList.innerHTML = "";
+
+  if (events.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "form-status";
+    empty.textContent = query || filterStatus || filterDateMode !== "all" ? "No matching events." : "No events saved yet.";
+    savedEventsList.append(empty);
+    return;
+  }
+
+  const batchSize = 20;
+  let index = 0;
+  function appendBatch() {
+    if (token !== renderToken) return;
+    const fragment = document.createDocumentFragment();
+    const end = Math.min(index + batchSize, events.length);
+    for (; index < end; index += 1) fragment.append(buildEventItem(events[index]));
+    savedEventsList.append(fragment);
+    if (index < events.length) requestAnimationFrame(appendBatch);
+  }
+  appendBatch();
 }
 
 function exportCsv() {
@@ -273,9 +306,9 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-savedSearch.addEventListener("input", () => { query = savedSearch.value; renderList(); });
+savedSearch.addEventListener("input", () => { query = savedSearch.value; scheduleRenderList(); });
 exportButton.addEventListener("click", exportCsv);
 newEventLink.addEventListener("click", () => { window.location.href = "index.html"; });
 
 ODC.ready.then(() => { buildFilters(); renderList(); });
-ODC.registerSync(renderList);
+ODC.registerSync(() => { dataVersion += 1; renderList(); });

@@ -89,6 +89,18 @@ function auditForRequest(req, pathName, body, user) {
   audit(req, action, entityType, entityId, detail, user);
 }
 
+function isAdminOnlyRoute(method, pathName) {
+  const path = pathName.split("?")[0];
+  if (path === "/api/auth/users") return method === "GET" || method === "POST";
+  if (/^\/api\/auth\/users\/[^/]+\/password$/.test(path)) return method === "PUT";
+  if (/^\/api\/auth\/users\/[^/]+$/.test(path)) return method === "PUT" || method === "DELETE";
+  if (path === "/api/admin/sessions") return method === "GET";
+  if (/^\/api\/admin\/sessions\/[^/]+$/.test(path)) return method === "DELETE";
+  if (path === "/api/admin/status") return method === "GET";
+  if (path.indexOf("/api/audit-log") === 0) return method === "GET";
+  return false;
+}
+
 async function callScript(method, pathName, body, user) {
   const response = await fetch(SCRIPT_URL, {
     method: "POST",
@@ -152,7 +164,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (pathName === "/api/auth/login" && req.method === "POST") {
-      const user = await callScript(req.method, pathName, req.body || {});
+      const user = await callScript(req.method, pathName, { ...(req.body || {}), ...clientInfo(req) });
       setSessionCookie(res, user);
       await callScript("POST", "/api/admin/sessions", {
         sessionId: user.sessionId,
@@ -180,6 +192,11 @@ module.exports = async function handler(req, res) {
         res.status(401).json({ error: "Session expired or force logged out." });
         return;
       }
+    }
+
+    if (isAdminOnlyRoute(req.method, pathName) && currentUser?.role !== "admin") {
+      res.status(403).json({ error: "Admin only." });
+      return;
     }
 
     if (pathName === "/api/admin/sessions" && req.method === "GET") {

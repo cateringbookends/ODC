@@ -3,7 +3,9 @@ const personNameInput = document.querySelector("#personName");
 const personCodeInput = document.querySelector("#personCode");
 const personDepartmentInput = document.querySelector("#personDepartment");
 const personLocationInput = document.querySelector("#personLocation");
+const personEmailInput = document.querySelector("#personEmail");
 const addPersonButton = document.querySelector("#addPerson");
+const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const masterList = document.querySelector("#masterList");
 const masterSearch = document.querySelector("#masterSearch");
 const masterForm = document.querySelector("#masterPersonsForm");
@@ -199,6 +201,7 @@ function prepareMasterView() {
         person.designation,
         person.department,
         person.location,
+        person.email,
       ].filter(Boolean).join(" ").toLowerCase()
     }))
   }));
@@ -275,7 +278,7 @@ function buildMasterGroup(head, filteredPersons, query) {
 
   const tableHead = document.createElement("div");
   tableHead.className = "master-person-row master-person-row-head";
-  ["Name", "Code", "Department", "Location", "Edit", "Delete"].forEach((label) => {
+  ["Name", "Code", "Department", "Location", "Email", "Edit", "Delete"].forEach((label) => {
     const cell = document.createElement("span");
     cell.textContent = label;
     tableHead.append(cell);
@@ -318,6 +321,10 @@ function buildMasterGroup(head, filteredPersons, query) {
       locationCell.className = "master-person-location";
       locationCell.textContent = person.location || "-";
 
+      const emailCell = document.createElement("span");
+      emailCell.className = "master-person-email";
+      emailCell.textContent = person.email || "-";
+
       const editPerson = document.createElement("button");
       editPerson.type = "button";
       editPerson.className = "edit-master-person";
@@ -339,13 +346,21 @@ function buildMasterGroup(head, filteredPersons, query) {
         if (nextDepartment === null) return;
         const nextLocation = prompt("Edit location", current.location || "");
         if (nextLocation === null) return;
+        let nextEmail = prompt("Edit email", current.email || "");
+        if (nextEmail === null) return;
+        nextEmail = nextEmail.trim();
+        if (nextEmail && !EMAIL_FORMAT.test(nextEmail)) {
+          alert("Enter a valid email or leave it blank.");
+          return;
+        }
         const updatedPerson = {
           ...current,
           name: cleanName,
           code: nextCode.trim(),
           designation: cleanPost,
           department: nextDepartment.trim(),
-          location: nextLocation.trim()
+          location: nextLocation.trim(),
+          email: nextEmail
         };
         h.persons = h.persons.filter((_, i) => i !== index);
         const targetHead = findOrCreateHead(cleanPost);
@@ -371,7 +386,7 @@ function buildMasterGroup(head, filteredPersons, query) {
         populateDepartmentFilter();
         renderMasterList();
       });
-      row.append(nameCell, codeCell, departmentCell, locationCell, editPerson, removePerson);
+      row.append(nameCell, codeCell, departmentCell, locationCell, emailCell, editPerson, removePerson);
       table.append(row);
     });
   }
@@ -475,15 +490,20 @@ function addPerson() {
   const personCode = personCodeInput.value.trim();
   const personDepartment = personDepartmentInput.value.trim();
   const personLocation = personLocationInput.value.trim();
+  const personEmail = (personEmailInput?.value || "").trim();
   if (!headName || !personName) {
     setMasterStatus("Post/designation and person name are required.", true);
+    return;
+  }
+  if (personEmail && !EMAIL_FORMAT.test(personEmail)) {
+    setMasterStatus("Enter a valid email or leave it blank.", true);
     return;
   }
 
   const head = findOrCreateHead(headName);
   const exists = head.persons.some((person) => String(person.name || person.personName || "").toLowerCase() === personName.toLowerCase() && String(person.code || "").toLowerCase() === personCode.toLowerCase());
   if (!exists) {
-    head.persons.push({ name: personName, code: personCode, designation: headName, department: personDepartment, location: personLocation });
+    head.persons.push({ name: personName, code: personCode, designation: headName, department: personDepartment, location: personLocation, email: personEmail });
     head.persons.sort(sortPersonsByName);
   }
 
@@ -493,6 +513,7 @@ function addPerson() {
   personCodeInput.value = "";
   personDepartmentInput.value = "";
   personLocationInput.value = "";
+  if (personEmailInput) personEmailInput.value = "";
   prepareMasterView();
   populateDepartmentFilter();
   renderMasterList();

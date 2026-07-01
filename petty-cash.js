@@ -100,16 +100,22 @@ function createCashRow(container, type, values = {}) {
 
   if (type === "payout") {
     row.classList.add("payout-row");
+    row.dataset.payoutId = values.id || `PO-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    row.dataset.mailSentTo = values.mail_sent_to || "";
+    row.dataset.mailSentAt = values.mail_sent_at || "";
+    row.dataset.mailSentBy = values.mail_sent_by || "";
     row.innerHTML = `
       <label class="cash-picker-field"><span>Head</span><select class="cash-head native-picker"></select><div class="smart-select" data-picker="head"></div></label>
       <label class="cash-picker-field"><span>Person</span><select class="cash-name native-picker"></select><div class="smart-select" data-picker="person"></div></label>
       <label><span>Purpose</span><input type="text" class="cash-purpose" placeholder="Vendor balance, staff advance"></label>
       <label><span>Amount</span><input type="number" class="cash-amount" min="0" step="0.01" placeholder="0.00"></label>
+      <button type="button" class="secondary-button petty-mail-btn">${values.mail_sent_at ? "Sent" : "Send Mail"}</button>
       <button type="button" class="remove-payment" aria-label="Remove row">Remove</button>
     `;
     populatePayoutSelectors(row, values);
     row.querySelector(".cash-purpose").value = values.purpose || "";
     if (values.amount) row.querySelector(".cash-amount").value = values.amount;
+    wirePettyMailButton(row);
   } else {
     row.innerHTML = `
       <label><span>Expense</span><input type="text" class="cash-name" placeholder="Local purchase"></label>
@@ -133,6 +139,61 @@ function createCashRow(container, type, values = {}) {
 
   container.append(row);
   return row;
+}
+
+const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function findPersonEmail(headId, personName) {
+  const head = masterHeads.find((item) => item.id === headId);
+  const person = (head?.persons || []).find((item) => (typeof item === "string" ? item : item.name) === personName);
+  return (person && typeof person === "object" && person.email) || "";
+}
+
+function wirePettyMailButton(row) {
+  const btn = row.querySelector(".petty-mail-btn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    if (!selectedEvent) { alert("Select an event before sending mail."); return; }
+    const headId = row.querySelector(".cash-head").value;
+    const personName = row.querySelector(".cash-name").value;
+    const purpose = row.querySelector(".cash-purpose").value.trim();
+    const amount = readNumber(row.querySelector(".cash-amount"));
+    if (!personName || !(amount > 0)) { alert("Select a person and enter an amount before sending."); return; }
+
+    const defaultEmail = row.dataset.mailSentTo || findPersonEmail(headId, personName);
+    const to = window.prompt("Send acknowledgment to:", defaultEmail || "");
+    if (to === null) return;
+    const cleanTo = to.trim();
+    if (!EMAIL_FORMAT.test(cleanTo)) { alert("Enter a valid email before sending."); return; }
+
+    const subject = `Petty Cash Acknowledgment - ${selectedEvent.name || selectedEvent.externalId || selectedEvent.id}`;
+    const bodyText = [
+      `Dear ${personName},`,
+      "",
+      `This is to confirm ${moneyFormatter.format(amount)} has been released to you as petty cash for ${selectedEvent.name || selectedEvent.id}${purpose ? ` (${purpose})` : ""}.`,
+      "Please treat this email as acknowledgment of the above amount received.",
+      "",
+      "Regards,",
+      "ODC"
+    ].join("\n");
+    const preview = `From: cateringbookends@gmail.com\nTo: ${cleanTo}\nSubject: ${subject}\n\n${bodyText}`;
+    if (!window.confirm(preview + "\n\nSend this email now?")) return;
+
+    try {
+      btn.disabled = true;
+      btn.textContent = "Sending...";
+      await ODC.api("POST", `/api/events/${encodeURIComponent(selectedEvent.id)}/petty-cash/${encodeURIComponent(row.dataset.payoutId)}/mail`, { email: cleanTo });
+      row.dataset.mailSentTo = cleanTo;
+      row.dataset.mailSentAt = new Date().toISOString();
+      row.dataset.mailSentBy = window.ODC_USER?.username || "";
+      savePettyCashNow();
+      btn.textContent = "Sent";
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "Send Mail";
+      alert(err.message || "Mail failed.");
+    }
+  });
 }
 
 function populatePayoutSelectors(row, values = {}) {
@@ -301,7 +362,7 @@ function populatePayoutSelectors(row, values = {}) {
     label: () => selectedHead()?.name || "",
     searchText: (head) => head.name,
     isSelected: (head) => head.id === headSelect.value,
-    optionHtml: (head) => `<strong>${head.name}</strong><small>${(head.persons || []).length} people</small>`,
+    optionHtml: (head) => `<strong>${ODC.escapeHtml(head.name)}</strong><small>${(head.persons || []).length} people</small>`,
     onSelect: (head) => {
       headSelect.value = head.id;
       buildHiddenPersonOptions();
@@ -320,9 +381,9 @@ function populatePayoutSelectors(row, values = {}) {
     searchText: personSearchText,
     isSelected: (person) => personName(person) === personSelect.value,
     optionHtml: (person) => {
-      const name = personName(person);
-      const code = typeof person === "string" ? "" : String(person?.code || "");
-      const role = typeof person === "string" ? "" : String(person?.designation || "");
+      const name = ODC.escapeHtml(personName(person));
+      const code = ODC.escapeHtml(typeof person === "string" ? "" : String(person?.code || ""));
+      const role = ODC.escapeHtml(typeof person === "string" ? "" : String(person?.designation || ""));
       return `<strong>${code ? `${name} (${code})` : name}</strong>${role ? `<small>${role}</small>` : ""}`;
     },
     onSelect: (person) => { personSelect.value = personName(person); }
@@ -359,10 +420,14 @@ function updateTotals() {
 
 function collectPettyCash() {
   const payouts = [...payoutRows.querySelectorAll(".cash-row")].map((row) => ({
+    id: row.dataset.payoutId,
     headId: row.querySelector(".cash-head").value,
     person: row.querySelector(".cash-name").value,
     purpose: row.querySelector(".cash-purpose").value.trim(),
-    amount: readNumber(row.querySelector(".cash-amount"))
+    amount: readNumber(row.querySelector(".cash-amount")),
+    mail_sent_to: row.dataset.mailSentTo || "",
+    mail_sent_at: row.dataset.mailSentAt || "",
+    mail_sent_by: row.dataset.mailSentBy || ""
   }));
   const petty = [...pettyCashRows.querySelectorAll(".cash-row")].map((row) => ({
     expense: row.querySelector(".cash-name").value.trim(),

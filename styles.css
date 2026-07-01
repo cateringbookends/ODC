@@ -841,7 +841,7 @@ dd { font-size: 0.83rem; font-weight: 700; color: var(--ink); }
 }
 .cash-row:hover { border-color: var(--accent); }
 .cash-row.payout-row {
-  grid-template-columns: minmax(160px, 0.85fr) minmax(240px, 1.25fr) minmax(220px, 1.25fr) minmax(120px, 0.55fr) 76px;
+  grid-template-columns: minmax(160px, 0.85fr) minmax(240px, 1.25fr) minmax(220px, 1.25fr) minmax(120px, 0.55fr) 92px 76px;
 }
 .cash-row label { display: flex; flex-direction: column; gap: 4px; }
 .cash-row span { font-size: 0.72rem; font-weight: 700; color: var(--muted); }
@@ -1150,7 +1150,7 @@ dd { font-size: 0.83rem; font-weight: 700; color: var(--ink); }
 .master-person-table { display: grid; }
 .master-person-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(70px, 0.45fr) minmax(100px, 0.75fr) minmax(90px, 0.65fr) 76px 84px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(70px, 0.45fr) minmax(100px, 0.75fr) minmax(90px, 0.65fr) minmax(110px, 0.85fr) 76px 84px;
   gap: 9px; align-items: center;
   padding: 9px 14px;
   border-bottom: 1px dashed var(--line);

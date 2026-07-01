@@ -28,7 +28,7 @@ var HEADERS = {
   ],
   MasterPersons: [
     "Head ID", "Head Name", "Person Name", "Code",
-    "Designation", "Department", "Location"
+    "Designation", "Department", "Location", "Email"
   ],
   PettyCash: [
     "Event ID", "Event Name", "Type",
@@ -102,10 +102,23 @@ function doPost(e) {
       return out(200, uploadReceiptToDrive(body));
     }
 
+    if (action === "run_digest_now") {
+      return out(200, runDailyManagerDigest_());
+    }
+
+    if (action === "ensure_digest_trigger") {
+      return out(200, ensureDailyDigestTrigger_());
+    }
+
     return out(400, { error: "Unknown action: " + action });
   } catch (err) {
     return out(500, { error: err.toString() });
   }
+}
+
+function requireAdmin_(body) {
+  var user = body && body._user;
+  if (!user || user.role !== "admin") throw new Error("Admin only.");
 }
 
 function api(method, path, body) {
@@ -120,34 +133,57 @@ function api(method, path, body) {
   if (path === "/api/auth/login" && method === "POST") {
     var username = String(body.username || "").trim().toLowerCase();
     var password = String(body.password || "");
+    var rateKey = "LOGIN_ATTEMPTS_" + username;
+    var rateProps = PropertiesService.getScriptProperties();
+    var rawState = rateProps.getProperty(rateKey);
+    var state = rawState ? JSON.parse(rawState) : { count: 0, firstAttempt: 0, lockedUntil: 0 };
+    var now = Date.now();
+    if (state.lockedUntil && now < state.lockedUntil) {
+      throw new Error("Too many login attempts. Try again in " + Math.ceil((state.lockedUntil - now) / 60000) + " minutes.");
+    }
+    if (!state.firstAttempt || now - state.firstAttempt > 15 * 60 * 1000) {
+      state = { count: 0, firstAttempt: now, lockedUntil: 0 };
+    }
     var user = findUserForApi_(username);
-    if (user && user.active && user.passwordHash === passwordHashForApi_(password)) {
+    if (user && user.active && verifyPasswordForApi_(password, user.passwordHash)) {
+      rateProps.deleteProperty(rateKey);
+      if (user.passwordHash.indexOf("pbkdf2:") !== 0) {
+        upgradeUserPasswordHashForApi_(user.username, passwordHashForApi_(password));
+      }
       return { username: user.username, fullName: user.fullName || user.username, role: user.role || "user" };
     }
+    state.count += 1;
+    if (state.count >= 10) state.lockedUntil = now + 30 * 60 * 1000;
+    rateProps.setProperty(rateKey, JSON.stringify(state));
     throw new Error("Invalid username or password.");
   }
   if (path === "/api/auth/logout" && method === "POST") return { ok: true };
   if (path === "/api/auth/users") {
-    if (method === "GET") return getUsersForApi_();
-    if (method === "POST") return createUserForApi_(body);
+    if (method === "GET") { requireAdmin_(body); return getUsersForApi_(); }
+    if (method === "POST") { requireAdmin_(body); return createUserForApi_(body); }
   }
   var userPasswordMatch = path.match(/^\/api\/auth\/users\/([^\/]+)\/password$/);
-  if (userPasswordMatch && method === "PUT") return updateUserPasswordForApi_(decodeURIComponent(userPasswordMatch[1]), body);
+  if (userPasswordMatch && method === "PUT") { requireAdmin_(body); return updateUserPasswordForApi_(decodeURIComponent(userPasswordMatch[1]), body); }
   var userMatch = path.match(/^\/api\/auth\/users\/([^\/]+)$/);
   if (userMatch) {
-    if (method === "PUT") return updateUserForApi_(decodeURIComponent(userMatch[1]), body);
-    if (method === "DELETE") return deleteUserForApi_(decodeURIComponent(userMatch[1]));
+    if (method === "PUT") { requireAdmin_(body); return updateUserForApi_(decodeURIComponent(userMatch[1]), body); }
+    if (method === "DELETE") { requireAdmin_(body); return deleteUserForApi_(decodeURIComponent(userMatch[1])); }
   }
-  if (path === "/api/admin/sessions" && method === "GET") return getSessionsForApi_();
+  // Session lifecycle calls (create/validate/logout) run for every logged-in user on every
+  // request — NOT admin-gated. Only the admin *console* views (list/force-logout) are.
+  if (path === "/api/admin/sessions" && method === "GET") { requireAdmin_(body); return getSessionsForApi_(); }
   if (path === "/api/admin/sessions" && method === "POST") return createSessionForApi_(body);
   if (path === "/api/admin/sessions/validate" && method === "POST") return validateSessionForApi_(body);
   if (path === "/api/admin/sessions/logout" && method === "POST") return logoutSessionForApi_(body);
   var adminSessionMatch = path.match(/^\/api\/admin\/sessions\/([^\/]+)$/);
-  if (adminSessionMatch && method === "DELETE") return revokeSessionsForApi_(decodeURIComponent(adminSessionMatch[1]));
+  if (adminSessionMatch && method === "DELETE") { requireAdmin_(body); return revokeSessionsForApi_(decodeURIComponent(adminSessionMatch[1])); }
+  // Page-hit telemetry is written by every user viewing any page — not admin-gated.
   if (path === "/api/admin/page-hit" && method === "POST") return recordPageHitForApi_(body);
-  if (path === "/api/admin/status" && method === "GET") return getAdminStatusForApi_();
+  if (path === "/api/admin/status" && method === "GET") { requireAdmin_(body); return getAdminStatusForApi_(); }
   if (path.indexOf("/api/audit-log") === 0) {
-    if (method === "GET") return getAuditLogForApi_(path);
+    // Reading the full audit log is admin-only; every user's own actions still get
+    // logged via the POST path below (called after nearly every mutating request).
+    if (method === "GET") { requireAdmin_(body); return getAuditLogForApi_(path); }
     if (method === "POST") return appendAuditForApi_(body);
   }
 
@@ -189,6 +225,11 @@ function api(method, path, body) {
   var paymentMailMatch = path.match(/^\/api\/events\/([^\/]+)\/payment-received\/([^\/]+)\/mail$/);
   if (paymentMailMatch && method === "POST") {
     return sendPaymentMailForApi_(decodeURIComponent(paymentMailMatch[1]), decodeURIComponent(paymentMailMatch[2]), body);
+  }
+
+  var pettyCashMailMatch = path.match(/^\/api\/events\/([^\/]+)\/petty-cash\/([^\/]+)\/mail$/);
+  if (pettyCashMailMatch && method === "POST") {
+    return sendPettyCashMailForApi_(decodeURIComponent(pettyCashMailMatch[1]), decodeURIComponent(pettyCashMailMatch[2]), body);
   }
 
   if (path === "/api/master-persons") {
@@ -402,6 +443,47 @@ function isoDateForApi_(value) {
   return text;
 }
 
+var KYC_PATTERNS_ = {
+  mobile: /^\d{10}$/,
+  pan: /^[A-Z]{5}\d{4}[A-Z]$/,
+  aadhar: /^\d{12}$/,
+  gst: /^\d{2}[A-Z0-9]{13}$/,
+  email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+};
+
+function sheetSafe_(value) {
+  var s = String(value === null || value === undefined ? "" : value);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+
+function validateEventForApi_(e) {
+  var errors = [];
+  if (!String(e.name || e.eventName || "").trim()) errors.push("Event name is required.");
+  if (!String(e.date || e.eventDate || "").trim()) errors.push("Event date is required.");
+  if (!String(e.location || "").trim()) errors.push("Location is required.");
+  if (!(Number(e.pax) > 0)) errors.push("PAX must be greater than 0.");
+  if (!(Number(e.costPerPax) > 0)) errors.push("Cost per PAX must be greater than 0.");
+  var status = String(e.status || "open").trim();
+  if (status && ["open", "planning", "completed", "cancelled"].indexOf(status) === -1) errors.push("Invalid status.");
+  var foodType = String(e.foodType || "").trim();
+  if (foodType && ["jain", "non-jain"].indexOf(foodType) === -1) errors.push("Food type must be Jain or Non-Jain.");
+  if (String(e.locationZone || "").length > 80) errors.push("City must be 80 characters or fewer.");
+  if (e.allergicCount !== undefined && e.allergicCount !== null && e.allergicCount !== "" && !(Number(e.allergicCount) >= 0)) {
+    errors.push("Allergic count must be 0 or more.");
+  }
+  var k = e.invoiceKyc || {};
+  ["mobile", "pan", "aadhar", "gst"].forEach(function (field) {
+    var v = String(k[field] || "").trim();
+    if (v && !KYC_PATTERNS_[field].test(v.toUpperCase())) {
+      var label = field === "pan" ? "PAN" : field === "gst" ? "GST" : field.charAt(0).toUpperCase() + field.slice(1);
+      errors.push(label + " format is invalid.");
+    }
+  });
+  var email = String(k.email || "").trim();
+  if (email && !KYC_PATTERNS_.email.test(email)) errors.push("Email format is invalid.");
+  if (errors.length) throw new Error(errors.join(" "));
+}
+
 function eventToRow_(e) {
   var pax = Number(e.pax) || 0;
   var days = Number(e.days) || 1;
@@ -412,9 +494,9 @@ function eventToRow_(e) {
     e.externalId || "",
     e.entryDate || "",
     e.date || e.eventDate || "",
-    e.name || e.eventName || "",
-    e.location || "",
-    e.locationZone || "",
+    sheetSafe_(e.name || e.eventName || ""),
+    sheetSafe_(e.location || ""),
+    sheetSafe_(e.locationZone || ""),
     pax,
     days,
     cost,
@@ -423,7 +505,7 @@ function eventToRow_(e) {
     e.time || "",
     e.foodType || "",
     Number(e.allergicCount) || 0,
-    e.allergicNotes || ""
+    sheetSafe_(e.allergicNotes || "")
   ];
 }
 
@@ -441,6 +523,7 @@ function findEventForApi_(id) {
 }
 
 function upsertEventForApi_(event) {
+  validateEventForApi_(event || {});
   var sheet = sheet_("Events", HEADERS.Events);
   var row = eventToRow_(event);
   var rows = values_(sheet);
@@ -544,16 +627,54 @@ function syncInvoiceKycForApi_(eventId, k) {
     if (String(rows[i][0]) === String(eventId)) sheet.deleteRow(i + 2);
   }
   if (Object.keys(k || {}).some(function (key) { return String(k[key] || "").trim(); })) {
-    sheet.appendRow([eventId, k.name || "", k.mobile || "", k.email || "", k.gst || "", k.pan || "", k.aadhar || ""]);
+    sheet.appendRow([
+      eventId,
+      sheetSafe_(k.name || ""),
+      k.mobile || "",
+      sheetSafe_(k.email || ""),
+      String(k.gst || "").trim().toUpperCase(),
+      String(k.pan || "").trim().toUpperCase(),
+      k.aadhar || ""
+    ]);
   }
 }
 
-function passwordHashForApi_(password) {
-  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(password || ""), Utilities.Charset.UTF_8);
+var PASSWORD_HASH_ITERATIONS = 10000;
+
+function bytesToHex_(bytes) {
   return bytes.map(function (b) {
     var v = b < 0 ? b + 256 : b;
     return ("0" + v.toString(16)).slice(-2);
   }).join("");
+}
+
+function legacyPasswordHash_(password) {
+  return bytesToHex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(password || ""), Utilities.Charset.UTF_8));
+}
+
+// Salted, iterated HMAC-SHA256 (Apps Script V8 has no native scrypt/bcrypt/PBKDF2).
+// Stored as "pbkdf2:<salt>:<hash>" so legacy unsalted-SHA256 rows (no prefix) are
+// still recognized and transparently upgraded on next successful login.
+function iteratedHmac_(password, salt) {
+  var value = String(password || "") + ":" + String(salt || "");
+  for (var i = 0; i < PASSWORD_HASH_ITERATIONS; i++) {
+    value = bytesToHex_(Utilities.computeHmacSha256Signature(value, salt));
+  }
+  return value;
+}
+
+function passwordHashForApi_(password, existingSalt) {
+  var salt = existingSalt || (Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, ""));
+  return "pbkdf2:" + salt + ":" + iteratedHmac_(password, salt);
+}
+
+function verifyPasswordForApi_(password, storedHash) {
+  var value = String(storedHash || "");
+  if (value.indexOf("pbkdf2:") === 0) {
+    var parts = value.split(":");
+    return iteratedHmac_(password, parts[1]) === parts[2];
+  }
+  return legacyPasswordHash_(password) === value;
 }
 
 function ensureUsersForApi_() {
@@ -567,10 +688,16 @@ function ensureUsersForApi_() {
     else seen[username] = true;
   }
   rows = values_(sheet);
-  var hasAiops = rows.some(function (r) { return String(r[0] || "").toLowerCase() === "aiops"; });
-  if (!hasAiops) {
+  // First-run bootstrap ONLY — this never re-fires once any user row exists, so a
+  // bootstrap admin created here can be safely renamed/deleted afterward without it
+  // silently reappearing (previously this recreated a hardcoded "aiops"/"AIops"
+  // account on every login lookup, forever, with an undeletable guard elsewhere).
+  if (rows.length === 0) {
     var now = new Date().toISOString();
-    sheet.appendRow(["aiops", "aiops", "admin", passwordHashForApi_("AIops"), now, now, "Yes"]);
+    var tempPassword = Utilities.getUuid().replace(/-/g, "").slice(0, 12);
+    sheet.appendRow(["aiops", "aiops", "admin", passwordHashForApi_(tempPassword), now, now, "Yes"]);
+    Logger.log("Bootstrap admin created - username: aiops, one-time password: " + tempPassword +
+      ". Log in, create your own named admin account, then delete/rename this one.");
   }
 }
 
@@ -651,6 +778,18 @@ function updateUserForApi_(username, body) {
   throw new Error("User not found.");
 }
 
+function upgradeUserPasswordHashForApi_(username, newHash) {
+  var sheet = sheet_("Users", HEADERS.Users);
+  var rows = values_(sheet);
+  var target = String(username || "").trim().toLowerCase();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || "").toLowerCase() === target) {
+      sheet.getRange(i + 2, 4, 1, 1).setValues([[newHash]]);
+      return;
+    }
+  }
+}
+
 function updateUserPasswordForApi_(username, body) {
   ensureUsersForApi_();
   var password = String(body.password || "");
@@ -671,7 +810,6 @@ function updateUserPasswordForApi_(username, body) {
 function deleteUserForApi_(username) {
   ensureUsersForApi_();
   var target = String(username || "").trim().toLowerCase();
-  if (target === "aiops") throw new Error("Cannot delete the default admin account.");
   var sheet = sheet_("Users", HEADERS.Users);
   var rows = values_(sheet);
   for (var i = rows.length - 1; i >= 0; i--) {
@@ -870,7 +1008,7 @@ function getMasterPersonsForApi_() {
     if (!id) return;
     if (!map[id]) map[id] = { id: id, name: String(r[1] || id), persons: [] };
     if (String(r[2] || "").trim()) {
-      map[id].persons.push({ name: r[2] || "", code: r[3] || "", designation: r[4] || "", department: r[5] || "", location: r[6] || "" });
+      map[id].persons.push({ name: r[2] || "", code: r[3] || "", designation: r[4] || "", department: r[5] || "", location: r[6] || "", email: r[7] || "" });
     }
   });
   return Object.keys(map).map(function (id) { return map[id]; });
@@ -880,8 +1018,8 @@ function putMasterPersonsForApi_(heads) {
   var sheet = sheet_("MasterPersons", HEADERS.MasterPersons);
   if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.MasterPersons.length).clearContent();
   (heads || []).forEach(function (h) {
-    if (!h.persons || !h.persons.length) sheet.appendRow([h.id, h.name, "", "", "", "", ""]);
-    else h.persons.forEach(function (p) { sheet.appendRow([h.id, h.name, p.name || "", p.code || "", p.designation || "", p.department || "", p.location || ""]); });
+    if (!h.persons || !h.persons.length) sheet.appendRow([h.id, h.name, "", "", "", "", "", ""]);
+    else h.persons.forEach(function (p) { sheet.appendRow([h.id, h.name, p.name || "", p.code || "", p.designation || "", p.department || "", p.location || "", p.email || ""]); });
   });
   markLiveChange_("master-persons");
   return heads || [];
@@ -1006,6 +1144,45 @@ function sendPaymentMailForApi_(eventId, paymentId, body) {
   return { ok: true, to: to };
 }
 
+function sendPettyCashMailForApi_(eventId, payoutId, body) {
+  var ev = findEventForApi_(eventId);
+  if (!ev) throw new Error("Event not found.");
+  var petty = getJsonRowForApi_("PettyCashJson", eventId, { payouts: [], petty: [] });
+  var payouts = Array.isArray(petty.payouts) ? petty.payouts : [];
+  var payout = null;
+  var index = -1;
+  for (var i = 0; i < payouts.length; i++) {
+    if (String(payouts[i].id) === String(payoutId)) {
+      payout = payouts[i];
+      index = i;
+      break;
+    }
+  }
+  if (!payout) throw new Error("Payout not found.");
+  var to = (body && body.email) || payout.mail_sent_to || "";
+  if (!to) throw new Error("No email address provided.");
+  var amount = Number(payout.amount) || 0;
+  var subject = "Petty Cash Acknowledgment - " + (ev.name || ev.externalId || eventId);
+  var bodyText = [
+    "Dear " + (payout.person || "") + ",",
+    "",
+    "This is to confirm Rs. " + amount.toLocaleString("en-IN") + " has been released to you as petty cash for " +
+      (ev.name || eventId) + (payout.purpose ? " (" + payout.purpose + ")" : "") + ".",
+    "Please treat this email as acknowledgment of the above amount received.",
+    "",
+    "Regards,",
+    "ODC"
+  ].join("\n");
+  MailApp.sendEmail(to, subject, bodyText);
+  payouts[index].mail_sent_at = new Date().toISOString();
+  payouts[index].mail_sent_to = to;
+  payouts[index].mail_sent_by = (body && body._user && body._user.username) || "unknown";
+  petty.payouts = payouts;
+  putJsonRowForApi_("PettyCashJson", eventId, petty);
+  markLiveChange_("petty-cash");
+  return { ok: true, to: to };
+}
+
 function getEventLogForApi_(eventId) {
   return getAuditLogForApi_("/api/audit-log?limit=500").filter(function (entry) {
     return String(entry.entity_id || "") === String(eventId) || String(entry.detail || "").indexOf("/api/events/" + eventId) >= 0;
@@ -1084,6 +1261,182 @@ function isoTimestampForApi_(value) {
   if (!value) return "";
   if (Object.prototype.toString.call(value) === "[object Date]") return value.toISOString();
   return String(value);
+}
+
+// ---- Daily per-manager bill digest ----
+
+function resolveManagerEmail_(headId) {
+  var heads = getMasterPersonsForApi_();
+  var head = null;
+  for (var i = 0; i < heads.length; i++) {
+    if (String(heads[i].id) === String(headId)) { head = heads[i]; break; }
+  }
+  if (!head) return "";
+  var persons = head.persons || [];
+  var manager = null;
+  for (var j = 0; j < persons.length; j++) {
+    if (/\bhead\b/i.test(String(persons[j].designation || persons[j].name || ""))) { manager = persons[j]; break; }
+  }
+  if (!manager) manager = persons[0];
+  return (manager && manager.email) ? String(manager.email).trim() : "";
+}
+
+function getDigestWatermark_(headId) {
+  return PropertiesService.getScriptProperties().getProperty("DIGEST_LAST_TS_" + headId) || "";
+}
+
+function setDigestWatermark_(headId, iso) {
+  PropertiesService.getScriptProperties().setProperty("DIGEST_LAST_TS_" + headId, iso);
+}
+
+function personBalances_(petty, approvedBills) {
+  return (petty.payouts || []).map(function (p) {
+    var spent = approvedBills.filter(function (b) {
+      return String(b.personName || "").toLowerCase() === String(p.person || "").toLowerCase();
+    }).reduce(function (s, b) { return s + (Number(b.amount) || 0); }, 0);
+    var payout = Number(p.amount) || 0;
+    return { person: p.person || "", payout: payout, spent: spent, balance: payout - spent };
+  });
+}
+
+function computeEventReconciliation_(eventId, allBills) {
+  var ev = findEventForApi_(eventId) || { id: eventId, name: eventId, totalBilling: 0 };
+  var petty = getJsonRowForApi_("PettyCashJson", eventId, { payouts: [], petty: [] });
+  var preCost = getJsonRowForApi_("PreCostJson", eventId, {});
+  var inHouse = getJsonRowForApi_("InHouseChargesJson", eventId, []);
+  var eventBills = allBills.filter(function (b) {
+    return String(b.eventClientId) === String(eventId) || b.eventName === ev.name;
+  });
+  var approvedBills = eventBills.filter(function (b) { return b.status === "approved"; });
+  var approvedBillTotal = approvedBills.reduce(function (s, b) { return s + (Number(b.amount) || 0); }, 0);
+  var directPettyTotal = (petty.petty || []).reduce(function (s, r) { return s + (Number(r.amount) || 0); }, 0);
+  var inHouseTotal = (inHouse || []).reduce(function (s, r) { return s + (Number(r.amount) || 0); }, 0);
+  var billing = Number(ev.totalBilling) || 0;
+  var preCostTotal = Number(preCost.totalCost) || 0;
+  var actualCost = approvedBillTotal + directPettyTotal + inHouseTotal;
+  return {
+    event: ev,
+    billing: billing,
+    preCostTotal: preCostTotal,
+    actualCost: actualCost,
+    plannedPL: billing - preCostTotal,
+    actualPL: billing - actualCost,
+    overspend: actualCost > preCostTotal,
+    persons: personBalances_(petty, approvedBills)
+  };
+}
+
+function buildDigestPdf_(headName, bills, reconciliation) {
+  var doc = DocumentApp.create("ODC Digest - " + headName + " - " + new Date().toISOString());
+  var body = doc.getBody();
+  body.appendParagraph("Daily Bill Digest - " + headName).setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  body.appendParagraph("Generated " + new Date().toLocaleString());
+
+  body.appendParagraph("New Bills").setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  var billTable = [["Event", "Category", "Amount", "Status", "Description"]];
+  bills.forEach(function (b) {
+    billTable.push([
+      b.eventName || "", b.category || "",
+      "Rs. " + (Number(b.amount) || 0).toLocaleString("en-IN"),
+      b.status || "", b.description || ""
+    ]);
+  });
+  body.appendTable(billTable);
+
+  bills.forEach(function (b) {
+    if (!b.receiptDriveUrl) return;
+    var match = String(b.receiptDriveUrl).match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (!match) return;
+    try {
+      var blob = DriveApp.getFileById(match[1]).getBlob();
+      body.appendParagraph((b.eventName || "") + " - receipt").setBold(true);
+      body.appendImage(blob).setWidth(360);
+    } catch (e) { /* not an image or inaccessible — skip embedding, table row above still lists it */ }
+  });
+
+  body.appendParagraph("Spend vs Budget").setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  reconciliation.forEach(function (r) {
+    var title = body.appendParagraph(r.event.name || r.event.id);
+    title.setBold(true);
+    body.appendParagraph(
+      "Billing: Rs. " + r.billing.toLocaleString("en-IN") +
+      " | Budget (Pre-Cost): Rs. " + r.preCostTotal.toLocaleString("en-IN") +
+      " | Actual Cost: Rs. " + r.actualCost.toLocaleString("en-IN") +
+      " | Actual P&L: Rs. " + r.actualPL.toLocaleString("en-IN") +
+      (r.overspend ? "  [OVER BUDGET]" : "")
+    );
+    if (r.persons.length) {
+      var personTable = [["Person", "Payout", "Spent (Approved Bills)", "Balance"]];
+      r.persons.forEach(function (p) {
+        personTable.push([
+          p.person,
+          "Rs. " + p.payout.toLocaleString("en-IN"),
+          "Rs. " + p.spent.toLocaleString("en-IN"),
+          "Rs. " + p.balance.toLocaleString("en-IN")
+        ]);
+      });
+      body.appendTable(personTable);
+    }
+  });
+
+  doc.saveAndClose();
+  var pdf = DriveApp.getFileById(doc.getId()).getAs("application/pdf").setName(headName + " - Daily Digest.pdf");
+  DriveApp.getFileById(doc.getId()).setTrashed(true);
+  return pdf;
+}
+
+function runDailyManagerDigest_() {
+  var allBills = getBillsForApi_();
+  var heads = getMasterPersonsForApi_();
+  var headIds = [];
+  allBills.forEach(function (b) {
+    if (b.headId && headIds.indexOf(b.headId) === -1) headIds.push(b.headId);
+  });
+
+  var headsProcessed = 0;
+  var emailsSent = 0;
+  var skippedNoEmail = [];
+
+  headIds.forEach(function (headId) {
+    var to = resolveManagerEmail_(headId);
+    if (!to) { skippedNoEmail.push(headId); return; }
+
+    var watermark = getDigestWatermark_(headId);
+    var newBills = allBills.filter(function (b) {
+      return String(b.headId) === String(headId) && b.submittedAt && b.submittedAt > watermark;
+    });
+    if (!newBills.length) return;
+
+    var eventIds = [];
+    newBills.forEach(function (b) {
+      if (eventIds.indexOf(b.eventClientId) === -1) eventIds.push(b.eventClientId);
+    });
+    var reconciliation = eventIds.map(function (eid) { return computeEventReconciliation_(eid, allBills); });
+
+    var maxTs = watermark;
+    newBills.forEach(function (b) { if (b.submittedAt > maxTs) maxTs = b.submittedAt; });
+
+    var headName = (heads.filter(function (h) { return String(h.id) === String(headId); })[0] || {}).name || headId;
+    var pdfBlob = buildDigestPdf_(headName, newBills, reconciliation);
+    var subject = "Daily Bill Digest - " + headName + " - " + new Date().toISOString().slice(0, 10);
+    var htmlBody = "Attached is the daily bill summary for " + headName + " (" + newBills.length +
+      " new bill" + (newBills.length === 1 ? "" : "s") + ").";
+    MailApp.sendEmail(to, subject, "", { htmlBody: htmlBody, attachments: [pdfBlob] });
+    setDigestWatermark_(headId, maxTs);
+    headsProcessed += 1;
+    emailsSent += 1;
+  });
+
+  return { ok: true, headsProcessed: headsProcessed, emailsSent: emailsSent, skippedNoEmail: skippedNoEmail };
+}
+
+function ensureDailyDigestTrigger_() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "runDailyManagerDigest_") return { ok: true, alreadyExists: true };
+  }
+  ScriptApp.newTrigger("runDailyManagerDigest_").timeBased().atHour(8).everyDays(1).create();
+  return { ok: true, created: true };
 }
 
 function out(code, data) {

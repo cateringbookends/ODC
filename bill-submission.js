@@ -61,6 +61,29 @@ function parseReceiptText(text) {
   };
 }
 
+function compressImageDataUrl(dataUrl, maxDim = 1600, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.naturalWidth;
+      let height = img.naturalHeight;
+      if (width > maxDim || height > maxDim) {
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => reject(new Error("Could not decode image for compression."));
+    img.src = dataUrl;
+  });
+}
+
 function buildOcrCard(onReceiptReady) {
   const wrap = document.createElement("div");
   wrap.className = "receipt-ocr-card";
@@ -103,15 +126,19 @@ function buildOcrCard(onReceiptReady) {
     result.hidden = true;
     try {
       const Tesseract = await loadTesseract();
-      const dataUrl = await new Promise((resolve, reject) => {
+      let dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (event) => resolve(event.target.result);
         reader.onerror = () => reject(new Error("Could not read receipt file."));
         reader.readAsDataURL(file);
       });
+      const isImage = (file.type || "").startsWith("image/");
+      if (isImage) {
+        try { dataUrl = await compressImageDataUrl(dataUrl); } catch { /* fall back to original */ }
+      }
       onReceiptReady?.({
         fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
+        mimeType: isImage ? "image/jpeg" : (file.type || "application/octet-stream"),
         base64: String(dataUrl).split(",")[1] || ""
       });
       status.textContent = "Scanning receipt...";

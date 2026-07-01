@@ -29,14 +29,15 @@ const ODC_MASTER_DEFAULTS = [
 let _heads = ODC.lsGet(ODC_MASTER_KEY, null);
 
 function normalizePerson(person) {
-  if (typeof person === "string") return { name: person, code: "", designation: "", department: "", location: "" };
+  if (typeof person === "string") return { name: person, code: "", designation: "", department: "", location: "", email: "" };
   const p = person || {};
   return {
     name: String(p.name || p.personName || "").trim(),
     code: String(p.code || p.employeeCode || "").trim(),
     designation: String(p.designation || "").trim(),
     department: String(p.department || "").trim(),
-    location: String(p.location || "").trim()
+    location: String(p.location || "").trim(),
+    email: String(p.email || "").trim()
   };
 }
 
