@@ -98,6 +98,7 @@ function isAdminOnlyRoute(method, pathName) {
   if (/^\/api\/admin\/sessions\/[^/]+$/.test(path)) return method === "DELETE";
   if (path === "/api/admin/status") return method === "GET";
   if (path.indexOf("/api/audit-log") === 0) return method === "GET";
+  if (path.indexOf("/api/mail-log") === 0) return method === "GET";
   return false;
 }
 

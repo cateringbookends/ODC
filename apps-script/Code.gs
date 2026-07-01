@@ -55,6 +55,9 @@ var HEADERS = {
   Sessions: [
     "Session ID", "Username", "Role", "IP Address", "User Agent",
     "Login At", "Last Seen At", "Expires At", "Last Page", "Active"
+  ],
+  MailLog: [
+    "ID", "Type", "To", "Subject", "Context", "Sent By", "Sent At", "Status", "Error"
   ]
 };
 
@@ -108,6 +111,21 @@ function doPost(e) {
 
     if (action === "ensure_digest_trigger") {
       return out(200, ensureDailyDigestTrigger_());
+    }
+
+    if (action === "test_mail") {
+      var testTo = String(body.email || "").trim();
+      if (!testTo) throw new Error("email is required");
+      var testSubject = "ODC Mail Center - Test Email";
+      var testBody = "This is a one-off test email to verify ODC's mail-sending pipeline and Mail Center logging.\n\nRegards,\nODC";
+      try {
+        MailApp.sendEmail(testTo, testSubject, testBody);
+      } catch (mailErr) {
+        logMail_("test", testTo, testSubject, "Manual verification", "system (manual test)", "failed", mailErr.message || String(mailErr));
+        throw mailErr;
+      }
+      logMail_("test", testTo, testSubject, "Manual verification", "system (manual test)", "sent");
+      return out(200, { ok: true, to: testTo });
     }
 
     return out(400, { error: "Unknown action: " + action });
@@ -186,6 +204,7 @@ function api(method, path, body) {
     if (method === "GET") { requireAdmin_(body); return getAuditLogForApi_(path); }
     if (method === "POST") return appendAuditForApi_(body);
   }
+  if (path.indexOf("/api/mail-log") === 0 && method === "GET") { requireAdmin_(body); return getMailLogForApi_(path); }
 
   if (path === "/api/events" && method === "GET") return getEventsForApi_();
   if (path === "/api/events" && method === "POST") return upsertEventForApi_(body);
@@ -344,6 +363,14 @@ function appendAuditRow(row) {
     applyHeaderStyle(sheet, HEADERS["AuditLog"]);
   }
   sheet.appendRow(row);
+}
+
+function logMail_(type, to, subject, context, sentBy, status, error) {
+  sheet_("MailLog", HEADERS.MailLog).appendRow([
+    "MAIL-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+    type, to || "", subject || "", context || "", sentBy || "",
+    new Date().toISOString(), status || "sent", error || ""
+  ]);
 }
 
 function applyHeaderStyle(sheet, headers) {
@@ -1135,10 +1162,17 @@ function sendPaymentMailForApi_(eventId, paymentId, body) {
     "Regards,",
     "ODC"
   ].join("\n");
-  MailApp.sendEmail(to, subject, bodyText);
+  var sentBy = (body && body._user && body._user.username) || "unknown";
+  try {
+    MailApp.sendEmail(to, subject, bodyText);
+  } catch (mailErr) {
+    logMail_("payment_received", to, subject, ev.name || eventId, sentBy, "failed", mailErr.message || String(mailErr));
+    throw mailErr;
+  }
+  logMail_("payment_received", to, subject, ev.name || eventId, sentBy, "sent");
   payments[index].mail_sent_at = new Date().toISOString();
   payments[index].mail_sent_to = to;
-  payments[index].mail_sent_by = (body && body._user && body._user.username) || "unknown";
+  payments[index].mail_sent_by = sentBy;
   putJsonRowForApi_("PaymentReceivedJson", eventId, payments);
   markLiveChange_("payments");
   return { ok: true, to: to };
@@ -1173,10 +1207,17 @@ function sendPettyCashMailForApi_(eventId, payoutId, body) {
     "Regards,",
     "ODC"
   ].join("\n");
-  MailApp.sendEmail(to, subject, bodyText);
+  var sentBy = (body && body._user && body._user.username) || "unknown";
+  try {
+    MailApp.sendEmail(to, subject, bodyText);
+  } catch (mailErr) {
+    logMail_("petty_cash_ack", to, subject, ev.name || eventId, sentBy, "failed", mailErr.message || String(mailErr));
+    throw mailErr;
+  }
+  logMail_("petty_cash_ack", to, subject, ev.name || eventId, sentBy, "sent");
   payouts[index].mail_sent_at = new Date().toISOString();
   payouts[index].mail_sent_to = to;
-  payouts[index].mail_sent_by = (body && body._user && body._user.username) || "unknown";
+  payouts[index].mail_sent_by = sentBy;
   petty.payouts = payouts;
   putJsonRowForApi_("PettyCashJson", eventId, petty);
   markLiveChange_("petty-cash");
@@ -1254,6 +1295,42 @@ function getAuditLogForApi_(path) {
     return true;
   });
   rows.sort(function (a, b) { return String(b.ts || "").localeCompare(String(a.ts || "")); });
+  return rows.slice(0, limit);
+}
+
+function getMailLogForApi_(path) {
+  var query = {};
+  var question = String(path || "").indexOf("?");
+  if (question >= 0) {
+    String(path).slice(question + 1).split("&").forEach(function (part) {
+      var pieces = part.split("=");
+      if (pieces[0]) query[decodeURIComponent(pieces[0])] = decodeURIComponent(pieces.slice(1).join("=") || "");
+    });
+  }
+  var limit = Math.min(Math.max(Number(query.limit) || 200, 1), 1000);
+  var type = String(query.type || "");
+  var from = String(query.from || "");
+  var to = String(query.to || "");
+  var rows = values_(sheet_("MailLog", HEADERS.MailLog)).map(function (r) {
+    return {
+      id: r[0] || "",
+      type: r[1] || "",
+      to: r[2] || "",
+      subject: r[3] || "",
+      context: r[4] || "",
+      sentBy: r[5] || "",
+      sentAt: isoTimestampForApi_(r[6]),
+      status: r[7] || "sent",
+      error: r[8] || ""
+    };
+  }).filter(function (entry) {
+    if (type && entry.type !== type) return false;
+    var day = String(entry.sentAt || "").slice(0, 10);
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    return true;
+  });
+  rows.sort(function (a, b) { return String(b.sentAt || "").localeCompare(String(a.sentAt || "")); });
   return rows.slice(0, limit);
 }
 
@@ -1472,7 +1549,13 @@ function runDailyManagerDigest_() {
     var subject = "Daily Bill Digest - " + headName + " - " + new Date().toISOString().slice(0, 10);
     var htmlBody = "Attached is the daily bill summary for " + headName + " (" + newBills.length +
       " new bill" + (newBills.length === 1 ? "" : "s") + ").";
-    MailApp.sendEmail(to, subject, "", { htmlBody: htmlBody, attachments: [pdfBlob] });
+    try {
+      MailApp.sendEmail(to, subject, "", { htmlBody: htmlBody, attachments: [pdfBlob] });
+    } catch (mailErr) {
+      logMail_("daily_digest", to, subject, headName, "system (daily trigger)", "failed", mailErr.message || String(mailErr));
+      return; // skip watermark advance so this head's bills are retried next run
+    }
+    logMail_("daily_digest", to, subject, headName, "system (daily trigger)", "sent");
     setDigestWatermark_(headId, maxTs);
     headsProcessed += 1;
     emailsSent += 1;

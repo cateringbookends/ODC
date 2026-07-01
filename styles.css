@@ -1265,6 +1265,7 @@ tfoot td {
 .status-planning  { background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
 .status-completed { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
 .status-cancelled { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
+.status-badge-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
 
 .overdue-badge {
   display: inline-block; font-size: 0.68rem; font-weight: 700;

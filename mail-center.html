@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
-  <title>Admin - ODC Event Dashboard</title>
+  <title>Mail Center - ODC Event Dashboard</title>
   <link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body>
@@ -25,8 +25,8 @@
       <a href="master-persons.html">Master Persons</a>
       <a href="bill-submission.html">Bill Submission</a>
       <a href="analytics.html">Analytics</a>
-      <a class="active" href="admin.html" data-admin-only>Admin</a>
-      <a href="mail-center.html" data-admin-only>Mail Center</a>
+      <a href="admin.html" data-admin-only>Admin</a>
+      <a class="active" href="mail-center.html" data-admin-only>Mail Center</a>
       <a href="faq.html">FAQ</a>
     </nav>
   </header>
@@ -35,22 +35,17 @@
     <section class="panel">
       <div class="panel-header">
         <p class="eyebrow">Administration</p>
-        <h1>Admin Panel</h1>
+        <h1>Mail Center</h1>
       </div>
 
-      <div class="admin-tabs" id="adminTabs">
-        <button type="button" class="admin-tab active" data-tab="users">Users</button>
-        <button type="button" class="admin-tab" data-tab="sessions">Active Sessions</button>
-        <button type="button" class="admin-tab" data-tab="audit">Audit Log</button>
-        <button type="button" class="admin-tab" data-tab="system">System</button>
-      </div>
+      <div id="mailQuotaGrid" class="admin-status-grid" style="margin-bottom:20px"></div>
 
-      <div id="adminContent" style="margin-top:20px">
-        <p class="form-status" id="adminStatus">Loading…</p>
+      <div id="mailCenterContent">
+        <p class="form-status" id="mailCenterStatus">Loading…</p>
       </div>
     </section>
   </main>
 
-  <script src="admin.js?v=7"></script>
+  <script src="mail-center.js?v=1"></script>
 </body>
 </html>
