@@ -1326,6 +1326,50 @@ function computeEventReconciliation_(eventId, allBills) {
   };
 }
 
+// Pure rule-based narrative — no AI API, just thresholds over numbers
+// computeEventReconciliation_ already produced. Kept intentionally simple
+// (a few sentences, not a report) so it stays cheap to run per digest.
+function buildNarrativeSentences_(r, eventBills, headName) {
+  var sentences = [];
+  var eventLabel = r.event.name || r.event.id;
+
+  if (r.overspend && r.preCostTotal > 0) {
+    var byCategory = {};
+    eventBills.forEach(function (b) {
+      var cat = b.category || "misc";
+      byCategory[cat] = (byCategory[cat] || 0) + (Number(b.amount) || 0);
+    });
+    var topCategory = "";
+    var topAmount = 0;
+    Object.keys(byCategory).forEach(function (cat) {
+      if (byCategory[cat] > topAmount) { topAmount = byCategory[cat]; topCategory = cat; }
+    });
+    var countInTop = eventBills.filter(function (b) { return (b.category || "misc") === topCategory; }).length;
+    var overPct = Math.round(((r.actualCost - r.preCostTotal) / r.preCostTotal) * 100);
+    sentences.push(
+      headName + " is " + overPct + "% over budget on " + eventLabel +
+      (topCategory ? ", driven by " + countInTop + " " + topCategory + " bill" + (countInTop === 1 ? "" : "s") +
+        " totaling Rs. " + topAmount.toLocaleString("en-IN") : "") + "."
+    );
+  } else if (r.preCostTotal > 0) {
+    var underPct = Math.round(((r.preCostTotal - r.actualCost) / r.preCostTotal) * 100);
+    if (underPct > 0) sentences.push(headName + " is tracking within budget on " + eventLabel + " (" + underPct + "% under Pre-Cost).");
+  }
+
+  r.persons.forEach(function (p) {
+    if (p.payout <= 0) return;
+    if (p.balance < 0) {
+      sentences.push(p.person + " has spent Rs. " + Math.abs(p.balance).toLocaleString("en-IN") +
+        " more than the petty cash assigned for " + eventLabel + ".");
+    } else {
+      var utilization = Math.round((p.spent / p.payout) * 100);
+      if (utilization > 90) sentences.push(p.person + "'s petty cash utilization on " + eventLabel + " is " + utilization + "%.");
+    }
+  });
+
+  return sentences;
+}
+
 function buildDigestPdf_(headName, bills, reconciliation) {
   var doc = DocumentApp.create("ODC Digest - " + headName + " - " + new Date().toISOString());
   var body = doc.getBody();
@@ -1377,6 +1421,13 @@ function buildDigestPdf_(headName, bills, reconciliation) {
       });
       body.appendTable(personTable);
     }
+
+    var eventBills = bills.filter(function (b) {
+      return String(b.eventClientId) === String(r.event.id) || b.eventName === r.event.name;
+    });
+    buildNarrativeSentences_(r, eventBills, headName).forEach(function (sentence) {
+      body.appendParagraph(sentence).setItalic(true);
+    });
   });
 
   doc.saveAndClose();

@@ -38,15 +38,28 @@ function parseReceiptText(text) {
     /(?:rs\.?|₹|inr)\s*([0-9,]+\.?\d*)/i,
     /([0-9,]+\.?\d*)\s*\/?\s*(?:rs\.?|₹|inr)/i
   ];
-  const amounts = [];
-  lines.forEach((line) => {
-    patterns.forEach((pattern) => {
+  // Carry provenance per match instead of a flat number list, so the "real total"
+  // line (matched by the "total/amount due" pattern, or lowest on the receipt)
+  // beats a stray larger number elsewhere (phone/GST number, subtotal, etc.).
+  const candidates = [];
+  lines.forEach((line, lineIndex) => {
+    patterns.forEach((pattern, patternIndex) => {
       const match = line.match(pattern);
       if (!match) return;
       const value = Number.parseFloat(match[1].replace(/,/g, ""));
-      if (value > 0 && value < 1000000) amounts.push(value);
+      if (value > 0 && value < 1000000) candidates.push({ value, patternIndex, lineIndex });
     });
   });
+
+  let bestAmount = null;
+  if (candidates.length) {
+    candidates.sort((a, b) => {
+      if (a.patternIndex !== b.patternIndex) return a.patternIndex - b.patternIndex; // pattern 0 = "total"-labeled
+      if (a.lineIndex !== b.lineIndex) return b.lineIndex - a.lineIndex; // prefer bottom-of-receipt
+      return b.value - a.value;
+    });
+    bestAmount = candidates[0].value;
+  }
 
   const full = String(text || "").toLowerCase();
   let category = "misc";
@@ -56,7 +69,7 @@ function parseReceiptText(text) {
   else if (/hotel|lodge|room|stay|accommodation|resort/.test(full)) category = "accommodation";
 
   return {
-    amount: amounts.length ? Math.max(...amounts) : null,
+    amount: bestAmount,
     category
   };
 }
@@ -80,6 +93,41 @@ function compressImageDataUrl(dataUrl, maxDim = 1600, quality = 0.6) {
       resolve(canvas.toDataURL("image/jpeg", quality));
     };
     img.onerror = () => reject(new Error("Could not decode image for compression."));
+    img.src = dataUrl;
+  });
+}
+
+// Grayscale + min/max contrast stretch, for OCR input only — the uploaded/stored
+// receipt (built from the plain compressed dataUrl) keeps its normal color.
+function preprocessForOcr(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      const gray = new Uint8ClampedArray(data.length / 4);
+      let min = 255, max = 0;
+      for (let i = 0, g = 0; i < data.length; i += 4, g += 1) {
+        const value = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        gray[g] = value;
+        if (value < min) min = value;
+        if (value > max) max = value;
+      }
+      const range = max - min || 1;
+      for (let i = 0, g = 0; i < data.length; i += 4, g += 1) {
+        const stretched = ((gray[g] - min) / range) * 255;
+        data[i] = data[i + 1] = data[i + 2] = stretched;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => reject(new Error("Could not decode image for OCR preprocessing."));
     img.src = dataUrl;
   });
 }
@@ -141,8 +189,12 @@ function buildOcrCard(onReceiptReady) {
         mimeType: isImage ? "image/jpeg" : (file.type || "application/octet-stream"),
         base64: String(dataUrl).split(",")[1] || ""
       });
+      let ocrInputUrl = dataUrl;
+      if (isImage) {
+        try { ocrInputUrl = await preprocessForOcr(dataUrl); } catch { /* fall back to the plain compressed image */ }
+      }
       status.textContent = "Scanning receipt...";
-      const ocr = await Tesseract.recognize(dataUrl, "eng", {
+      const ocr = await Tesseract.recognize(ocrInputUrl, "eng", {
         logger: (m) => {
           if (m.status === "recognizing text") status.textContent = "Scanning... " + Math.round(m.progress * 100) + "%";
         }
@@ -454,6 +506,43 @@ function buildForm(events, masterPersons) {
   populateHeads([], []);
 }
 
+// ── Anomaly / duplicate detection (pure statistics, no AI API) ─────────
+function computeCategoryStats_(bills) {
+  const byCategory = {};
+  bills.forEach((b) => {
+    if (b.status === "rejected") return;
+    const cat = b.category || "misc";
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(Number(b.amount) || 0);
+  });
+  const stats = {};
+  Object.keys(byCategory).forEach((cat) => {
+    const values = byCategory[cat];
+    if (values.length < 5) return; // too few samples to call anything an outlier
+    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
+    stats[cat] = { mean, stddev: Math.sqrt(variance) };
+  });
+  return stats;
+}
+
+// No vendor field exists in this data model, so "duplicate" is defined by
+// event + category + amount (within 1%) + a 7-day window, not text/vendor matching.
+function findDuplicateBill_(bill, bills) {
+  const amount = Number(bill.amount) || 0;
+  if (amount <= 0) return null;
+  const time = new Date(bill.submittedAt || 0).getTime();
+  return bills.find((other) => {
+    if (other.id === bill.id) return false;
+    if (String(other.eventClientId) !== String(bill.eventClientId)) return false;
+    if ((other.category || "misc") !== (bill.category || "misc")) return false;
+    const otherAmount = Number(other.amount) || 0;
+    if (Math.abs(amount - otherAmount) / amount > 0.01) return false;
+    const otherTime = new Date(other.submittedAt || 0).getTime();
+    return Math.abs(time - otherTime) <= 7 * 24 * 60 * 60 * 1000;
+  }) || null;
+}
+
 // ── Bills List ─────────────────────────────────────────────────────────
 let billsLoading = false;
 async function loadBills() {
@@ -478,6 +567,7 @@ async function loadBills() {
     }
 
     const isAdmin = window.ODC_USER && window.ODC_USER.role === "admin";
+    const categoryStats = computeCategoryStats_(bills);
 
     bills.forEach(bill => {
       const card = document.createElement("div");
@@ -512,6 +602,20 @@ async function loadBills() {
       rightCol.append(amtEl, statusBadge);
       topRow.append(rightCol);
       card.append(topRow);
+
+      const warnings = [];
+      const stat = categoryStats[bill.category || "misc"];
+      if (stat && Number(bill.amount) > stat.mean + 2 * stat.stddev) {
+        warnings.push("Unusually high for " + (bill.category || "misc") + " (avg " + money.format(stat.mean) + ")");
+      }
+      const duplicate = findDuplicateBill_(bill, bills);
+      if (duplicate) warnings.push("Possible duplicate of " + duplicate.id);
+      if (warnings.length) {
+        const warnEl = document.createElement("p");
+        warnEl.style.cssText = "font-size:0.74rem;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:4px 8px;margin-top:6px";
+        warnEl.textContent = "⚠ " + warnings.join(" · ");
+        card.append(warnEl);
+      }
 
       if (bill.description) {
         const descEl = document.createElement("p");

@@ -171,13 +171,41 @@ function buildShell(total) {
 
 let shellBuilt = false;
 let currentFiltered = [];
+let tabsBarEl = null;
+let insightsBuilt = false;
+
+function buildTabsBar() {
+  var bar = document.createElement("div");
+  bar.className = "admin-tabs an-tabs";
+  bar.innerHTML =
+    '<button type="button" class="admin-tab active" data-tab="charts">Charts</button>' +
+    '<button type="button" class="admin-tab" data-tab="insights">Insights</button>';
+  bar.addEventListener("click", function(e) {
+    var btn = e.target.closest(".admin-tab");
+    if (!btn) return;
+    bar.querySelectorAll(".admin-tab").forEach(function(b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    var tab = btn.dataset.tab;
+    var chartsPanel = document.getElementById("anChartsPanel");
+    var insightsPanel = document.getElementById("anInsightsPanel");
+    if (chartsPanel) chartsPanel.hidden = tab !== "charts";
+    if (insightsPanel) {
+      insightsPanel.hidden = tab !== "insights";
+      if (tab === "insights" && !insightsBuilt) {
+        insightsBuilt = true;
+        buildInsights(allEvents);
+      }
+    }
+  });
+  return bar;
+}
 
 function render(events) {
   var filtered = applyDateFilter(events);
   currentFiltered = filtered;
   statusEl.hidden = true;
   if (!shellBuilt) {
-    contentEl.innerHTML = buildShell(filtered.length);
+    contentEl.innerHTML = '<div id="anChartsPanel">' + buildShell(filtered.length) + '</div><div id="anInsightsPanel" hidden></div>';
     shellBuilt = true;
     bindExport();
   } else {
@@ -406,6 +434,139 @@ async function exportXlsx(events) {
 
 function exportPdf() { window.print(); }
 
+// ── Insights tab (pure rule-based thresholds over already-cached data — no AI API) ──
+function periodEvents(events, monthsBack, offsetMonths) {
+  var today = new Date();
+  var to = new Date(today); to.setMonth(to.getMonth() - offsetMonths);
+  var from = new Date(to); from.setMonth(from.getMonth() - monthsBack);
+  return events.filter(function(e) {
+    if (!e.date) return false;
+    var d = new Date(e.date);
+    return d >= from && d < to;
+  });
+}
+
+function pctChange(current, previous) {
+  if (!previous) return current ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function insightCard(text, tone) {
+  return '<div class="an-insight-card' + (tone ? " an-insight-" + tone : "") + '">' + AN.esc(text) + '</div>';
+}
+
+function buildInsights(events) {
+  var panel = document.getElementById("anInsightsPanel");
+  if (!panel) return;
+
+  // Fixed rolling window (last 3 months vs prior 3), independent of the Charts tab's
+  // filter pills — insights need a stable, always-comparable baseline.
+  var current  = periodEvents(events, 3, 0);
+  var previous = periodEvents(events, 3, 3);
+  var cards = [];
+
+  var curBilling  = current.reduce(function(s,e){ return s + AN.num(e.totalBilling); }, 0);
+  var prevBilling = previous.reduce(function(s,e){ return s + AN.num(e.totalBilling); }, 0);
+  if (previous.length) {
+    var billingDelta = pctChange(curBilling, prevBilling);
+    cards.push(insightCard(
+      "Billing is " + (billingDelta >= 0 ? "up" : "down") + " " + Math.abs(billingDelta) +
+      "% vs the prior 3 months (" + AN.money.format(curBilling) + " vs " + AN.money.format(prevBilling) + ").",
+      billingDelta >= 0 ? "good" : "risk"
+    ));
+  }
+
+  var curZone  = groupBy(current, function(e){ return e.locationZone || "not-set"; });
+  var prevZone = groupBy(previous, function(e){ return e.locationZone || "not-set"; });
+  Object.keys(curZone).forEach(function(zone) {
+    var prevZoneBilling = (prevZone[zone] || { billing: 0 }).billing;
+    if (prevZoneBilling <= 0) return;
+    var delta = pctChange(curZone[zone].billing, prevZoneBilling);
+    if (Math.abs(delta) >= 25) {
+      cards.push(insightCard(
+        AN.titleCase(zone) + " billing " + (delta >= 0 ? "up" : "down") + " " + Math.abs(delta) + "% vs the prior 3 months.",
+        delta >= 0 ? "good" : "risk"
+      ));
+    }
+  });
+
+  var curStatus = groupBy(current, function(e){ return e.status || "open"; });
+  var cancelledCount = curStatus.cancelled ? curStatus.cancelled.count : 0;
+  if (current.length && AN.pct(cancelledCount, current.length) >= 15) {
+    cards.push(insightCard(AN.pct(cancelledCount, current.length) + "% of events in the last 3 months were cancelled.", "risk"));
+  }
+
+  var curAvgPax  = current.length  ? current.reduce(function(s,e){ return s + AN.num(e.pax); }, 0) / current.length : 0;
+  var prevAvgPax = previous.length ? previous.reduce(function(s,e){ return s + AN.num(e.pax); }, 0) / previous.length : 0;
+  if (previous.length && prevAvgPax > 0) {
+    var paxDelta = pctChange(curAvgPax, prevAvgPax);
+    if (Math.abs(paxDelta) >= 15) {
+      cards.push(insightCard(
+        "Average event size is " + (paxDelta >= 0 ? "up" : "down") + " " + Math.abs(paxDelta) +
+        "% (" + Math.round(curAvgPax) + " vs " + Math.round(prevAvgPax) + " avg PAX).", ""
+      ));
+    }
+  }
+
+  if (!cards.length) {
+    cards.push(insightCard("Not enough data in the last 3 months to surface trends yet.", ""));
+  }
+
+  panel.innerHTML = '<div class="an-insights-grid">' + cards.join("") + '</div>' +
+    '<div class="an-budget-insights"><button type="button" class="secondary-button" id="anLoadBudget">Load Budget Insights</button>' +
+    '<div id="anBudgetResult"></div></div>';
+
+  var loadBtn = document.getElementById("anLoadBudget");
+  if (loadBtn) loadBtn.addEventListener("click", function() { loadBudgetInsights(currentFiltered.length ? currentFiltered : events); });
+}
+
+// Manual, opt-in only — fans out per-event API calls (pre-cost/petty-cash/in-house),
+// which the Charts tab intentionally never does automatically (Apps Script quota risk).
+async function loadBudgetInsights(events) {
+  var resultEl = document.getElementById("anBudgetResult");
+  var btn = document.getElementById("anLoadBudget");
+  if (!resultEl || !btn) return;
+  var CAP = 40;
+  var targets = events.filter(function(e){ return e.status !== "cancelled"; }).slice(0, CAP);
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  resultEl.innerHTML = "";
+  try {
+    var bills = (await ODC.api("GET", "/api/bills")) || [];
+    var rows = await Promise.all(targets.map(async function(ev) {
+      var preCost, petty, inHouse;
+      try {
+        var results = await Promise.all([
+          ODC.api("GET", "/api/events/" + encodeURIComponent(ev.id) + "/pre-cost").catch(function(){ return {}; }),
+          ODC.api("GET", "/api/events/" + encodeURIComponent(ev.id) + "/petty-cash").catch(function(){ return { payouts: [], petty: [] }; }),
+          ODC.api("GET", "/api/events/" + encodeURIComponent(ev.id) + "/in-house-charges").catch(function(){ return []; })
+        ]);
+        preCost = results[0]; petty = results[1]; inHouse = results[2];
+      } catch { preCost = {}; petty = { payouts: [], petty: [] }; inHouse = []; }
+      var eventBills = bills.filter(function(b){ return b.eventClientId === ev.id || b.eventName === ev.name; });
+      var approvedBillTotal = eventBills.filter(function(b){ return b.status === "approved"; }).reduce(function(s,b){ return s + AN.num(b.amount); }, 0);
+      var directPettyTotal = (petty.petty || []).reduce(function(s,r){ return s + AN.num(r.amount); }, 0);
+      var inHouseTotal = (inHouse || []).reduce(function(s,r){ return s + AN.num(r.amount); }, 0);
+      var actualCost = approvedBillTotal + directPettyTotal + inHouseTotal;
+      var preCostTotal = AN.num(preCost.totalCost);
+      return { ev: ev, preCostTotal: preCostTotal, actualCost: actualCost, overspend: preCostTotal > 0 && actualCost > preCostTotal };
+    }));
+    var overBudget = rows.filter(function(r){ return r.overspend; });
+    if (overBudget.length) {
+      resultEl.innerHTML = '<div class="an-insights-grid">' + overBudget.map(function(r) {
+        return insightCard((r.ev.name || r.ev.id) + ": actual cost " + AN.money.format(r.actualCost) + " vs budget " + AN.money.format(r.preCostTotal), "risk");
+      }).join("") + '</div>';
+    } else {
+      resultEl.innerHTML = '<p class="form-status">No events over budget' + (targets.length < events.length ? " (checked first " + CAP + " events)" : "") + '.</p>';
+    }
+  } catch (err) {
+    resultEl.textContent = "Could not load budget insights: " + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Load Budget Insights";
+  }
+}
+
 function bindExport() {
   var c = document.getElementById("exportCsv");
   var x = document.getElementById("exportXlsx");
@@ -425,11 +586,21 @@ async function init() {
     filterBarEl = buildFilterBar();
     contentEl.parentNode.insertBefore(filterBarEl, contentEl);
   }
+  if (!tabsBarEl) {
+    tabsBarEl = buildTabsBar();
+    contentEl.parentNode.insertBefore(tabsBarEl, contentEl);
+  }
   allEvents = getSavedEvents();
   render(allEvents);
 }
 
-function reload() { allEvents = getSavedEvents(); render(allEvents); }
+function reload() {
+  allEvents = getSavedEvents();
+  render(allEvents);
+  var insightsPanel = document.getElementById("anInsightsPanel");
+  if (insightsPanel && !insightsPanel.hidden) buildInsights(allEvents);
+  else insightsBuilt = false;
+}
 
 ODC.ready.then(init);
 ODC.registerSync(reload);
