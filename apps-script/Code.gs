@@ -73,7 +73,13 @@ function doPost(e) {
       return out(200, { ok: true, message: "API key configured" });
     }
 
-    // Auth
+    // Scoped agent API — authenticated by its OWN token (not the master key),
+    // so an external agent can reach a limited slice of the data layer directly.
+    if (body.action === "agent_api") {
+      return handleAgentApi_(body);
+    }
+
+    // Auth (master key) — required for every other action.
     if (!storedKey || body.apiKey !== storedKey) {
       return out(403, { error: "Unauthorized" });
     }
@@ -205,6 +211,8 @@ function api(method, path, body) {
     if (method === "POST") return appendAuditForApi_(body);
   }
   if (path.indexOf("/api/mail-log") === 0 && method === "GET") { requireAdmin_(body); return getMailLogForApi_(path); }
+  if (path === "/api/agent-token" && method === "GET") { requireAdmin_(body); return agentTokenStatusForApi_(); }
+  if (path === "/api/agent-token/rotate" && method === "POST") { requireAdmin_(body); return rotateAgentTokenForApi_(); }
 
   if (path === "/api/events" && method === "GET") return getEventsForApi_();
   if (path === "/api/events" && method === "POST") return upsertEventForApi_(body);
@@ -1571,6 +1579,104 @@ function ensureDailyDigestTrigger_() {
   }
   ScriptApp.newTrigger("runDailyManagerDigest_").timeBased().atHour(8).everyDays(1).create();
   return { ok: true, created: true };
+}
+
+// ---- Scoped agent API (token-authenticated, read + create/update, no delete) ----
+
+var AGENT_ALLOWED_METHODS = { GET: true, POST: true, PUT: true };
+// Denied entirely for the agent token: user accounts, admin console, logs, and
+// any email-sending endpoint. Everything else (events + children, bills, master
+// persons, petty cash, pre-cost, payments, in-house charges) is reachable.
+var AGENT_DENY_PREFIXES = ["/api/auth", "/api/admin", "/api/audit-log", "/api/mail-log", "/api/agent-token"];
+
+function handleAgentApi_(body) {
+  var stored = PropertiesService.getScriptProperties().getProperty("AGENT_API_TOKEN");
+  var provided = String(body.agentToken || "");
+  if (!stored) return out(403, { error: "Agent API is not enabled. An admin must generate a token first." });
+  if (provided.length !== stored.length || provided !== stored) return out(403, { error: "Invalid agent token." });
+
+  var method = String(body.method || "GET").toUpperCase();
+  var path = String(body.path || "");
+  var pathOnly = path.split("?")[0];
+
+  if (!AGENT_ALLOWED_METHODS[method]) {
+    return out(403, { error: "Agent token cannot use method " + method + " (read + create/update only)." });
+  }
+  for (var i = 0; i < AGENT_DENY_PREFIXES.length; i++) {
+    if (pathOnly.indexOf(AGENT_DENY_PREFIXES[i]) === 0) {
+      return out(403, { error: "Path not permitted for agent token: " + pathOnly });
+    }
+  }
+  if (/\/mail$/.test(pathOnly)) {
+    return out(403, { error: "Email-sending endpoints are not permitted for the agent token." });
+  }
+
+  var rl = agentRateLimitCheck_();
+  if (!rl.ok) return out(429, { error: rl.message });
+
+  if (method !== "GET") agentAudit_(method, pathOnly, body.body);
+
+  var agentBody = {};
+  var src = body.body || {};
+  for (var k in src) { if (Object.prototype.hasOwnProperty.call(src, k)) agentBody[k] = src[k]; }
+  agentBody._user = { username: "api-agent", role: "agent" };
+
+  try {
+    return out(200, api(method, path, agentBody));
+  } catch (err) {
+    return out(400, { error: err.message || String(err) });
+  }
+}
+
+function agentRateLimitCheck_() {
+  var props = PropertiesService.getScriptProperties();
+  var now = Date.now();
+  var windowMs = 60 * 1000;
+  var maxReq = 60;
+  var raw = props.getProperty("AGENT_RATE");
+  var state = raw ? JSON.parse(raw) : { windowStart: now, count: 0 };
+  if (now - state.windowStart > windowMs) state = { windowStart: now, count: 0 };
+  state.count += 1;
+  props.setProperty("AGENT_RATE", JSON.stringify(state));
+  if (state.count > maxReq) {
+    return { ok: false, message: "Rate limit exceeded (" + maxReq + " requests/minute). Try again shortly." };
+  }
+  return { ok: true };
+}
+
+function agentAudit_(method, path, reqBody) {
+  var action = method === "POST" ? "AGENT_CREATE" : method === "PUT" ? "AGENT_UPDATE" : "AGENT_" + method;
+  var parts = path.split("/").filter(function (p) { return p; });
+  var entityType = parts[1] || "api";
+  var entityId = parts[2] || "";
+  var detail = path;
+  if (reqBody && typeof reqBody === "object") {
+    var keys = Object.keys(reqBody).filter(function (key) { return key !== "_user" && key !== "receipt"; }).slice(0, 8);
+    if (keys.length) detail += " | " + keys.join(",");
+  }
+  appendAuditRow([
+    "AUD-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+    "api-agent", action, entityType, entityId, detail, "", "agent-token", new Date().toISOString()
+  ]);
+}
+
+function rotateAgentTokenForApi_() {
+  var token = "odc_agent_" + Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "").slice(0, 8);
+  PropertiesService.getScriptProperties().setProperty("AGENT_API_TOKEN", token);
+  return { ok: true, token: token };
+}
+
+function agentTokenStatusForApi_() {
+  var t = PropertiesService.getScriptProperties().getProperty("AGENT_API_TOKEN");
+  var endpoint = "";
+  try { endpoint = ScriptApp.getService().getUrl(); } catch (e) { endpoint = ""; }
+  return {
+    configured: !!t,
+    tokenPreview: t ? (t.slice(0, 14) + "…" + t.slice(-4)) : "",
+    endpoint: endpoint,
+    rateLimitPerMinute: 60,
+    allowedMethods: ["GET", "POST", "PUT"]
+  };
 }
 
 function out(code, data) {

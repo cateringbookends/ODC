@@ -75,6 +75,7 @@ async function refreshTab(tab, silent) {
     else if (tab === "sessions") await renderSessions(token);
     else if (tab === "audit") await renderAudit(token);
     else if (tab === "system") await renderSystem(token);
+    else if (tab === "api") await renderApiAccess(token);
   } catch (err) {
     if (token !== renderToken) return;
     setStatus("Error: " + err.message, true);
@@ -561,6 +562,91 @@ async function renderSystem(token = renderToken) {
     <p><strong>Last checked:</strong> ${status.updatedAt ? new Date(status.updatedAt).toLocaleString("en-IN") : "—"}</p>
   `;
   contentEl.append(info);
+}
+
+async function renderApiAccess(token = renderToken) {
+  const status = await api("GET", "/api/agent-token");
+  if (!isCurrentRender(token) || activeTab !== "api") return;
+  statusEl.hidden = true;
+
+  const title = document.createElement("h2");
+  title.style.marginBottom = "12px";
+  title.textContent = "API Access (Agent Token)";
+  contentEl.append(title);
+
+  const intro = document.createElement("p");
+  intro.className = "form-status";
+  intro.style.cssText = "margin-bottom:16px;line-height:1.5";
+  intro.textContent = "A scoped token lets an external agent read and create/update data over REST — no deletes, no access to user accounts, admin routes, logs, or email-sending. All writes are rate-limited (" +
+    (status.rateLimitPerMinute || 60) + "/min) and recorded in the Audit Log as \"api-agent\".";
+  contentEl.append(intro);
+
+  const grid = document.createElement("div");
+  grid.className = "admin-status-grid";
+  [
+    ["Status", status.configured ? "Enabled" : "Not generated yet"],
+    ["Token", status.configured ? status.tokenPreview : "—"],
+    ["Allowed methods", (status.allowedMethods || []).join(", ")],
+    ["Rate limit", (status.rateLimitPerMinute || 60) + " / min"]
+  ].forEach(([label, value]) => {
+    const card = document.createElement("div");
+    card.className = "financial-metric";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const strong = document.createElement("strong");
+    strong.style.fontSize = "0.9rem";
+    strong.textContent = value == null ? "—" : String(value);
+    card.append(span, strong);
+    grid.append(card);
+  });
+  contentEl.append(grid);
+
+  if (status.endpoint) {
+    const ep = document.createElement("p");
+    ep.className = "admin-system-info";
+    ep.style.marginTop = "14px";
+    const epLabel = document.createElement("strong");
+    epLabel.textContent = "Endpoint: ";
+    const epCode = document.createElement("code");
+    epCode.textContent = status.endpoint;
+    epCode.style.cssText = "word-break:break-all;font-size:0.8rem";
+    ep.append(epLabel, epCode);
+    contentEl.append(ep);
+  }
+
+  const actions = document.createElement("div");
+  actions.style.cssText = "margin-top:18px;display:flex;flex-direction:column;gap:10px";
+  const rotateBtn = document.createElement("button");
+  rotateBtn.type = "button";
+  rotateBtn.className = "primary-button";
+  rotateBtn.style.alignSelf = "flex-start";
+  rotateBtn.textContent = status.configured ? "Rotate Token" : "Generate Token";
+  const reveal = document.createElement("div");
+  reveal.style.cssText = "display:none";
+  rotateBtn.addEventListener("click", async () => {
+    if (status.configured && !confirm("Rotating invalidates the current token immediately. Any agent using it will stop working until updated. Continue?")) return;
+    rotateBtn.disabled = true;
+    rotateBtn.textContent = "Working…";
+    try {
+      const res = await api("POST", "/api/agent-token/rotate");
+      reveal.style.display = "";
+      reveal.innerHTML = "";
+      const warn = document.createElement("p");
+      warn.style.cssText = "font-weight:700;color:#b45309;margin-bottom:6px";
+      warn.textContent = "Copy this token now — it is shown only once:";
+      const box = document.createElement("code");
+      box.style.cssText = "display:block;word-break:break-all;padding:10px 12px;background:#f8fafc;border:1px solid var(--surface-border);border-radius:8px;font-size:0.82rem";
+      box.textContent = res.token;
+      reveal.append(warn, box);
+    } catch (err) {
+      alert("Error: " + err.message);
+    } finally {
+      rotateBtn.disabled = false;
+      rotateBtn.textContent = "Rotate Token";
+    }
+  });
+  actions.append(rotateBtn, reveal);
+  contentEl.append(actions);
 }
 
 // Boot

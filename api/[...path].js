@@ -99,6 +99,7 @@ function isAdminOnlyRoute(method, pathName) {
   if (path === "/api/admin/status") return method === "GET";
   if (path.indexOf("/api/audit-log") === 0) return method === "GET";
   if (path.indexOf("/api/mail-log") === 0) return method === "GET";
+  if (path.indexOf("/api/agent-token") === 0) return true;
   return false;
 }
 
