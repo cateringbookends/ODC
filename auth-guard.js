@@ -11,6 +11,7 @@
     ["Analytics", "analytics.html", ""],
     ["Master Persons", "master-persons.html", ""],
     ["Admin", "admin.html", "admin"],
+    ["Mail Center", "mail-center.html", "admin"],
     ["FAQ", "faq.html", ""]
   ];
   let cachedUser = null;
