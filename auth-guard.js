@@ -1,15 +1,18 @@
 (async function () {
   const USER_CACHE_KEY = "odcCurrentUser";
+  // Order + labels MUST match the static nav in every page's HTML exactly, so the
+  // reconcile below finds them identical and reuses the DOM instead of wiping and
+  // rebuilding the nav on every load (which caused the visible reordering/settling).
   const NAV_ITEMS = [
     ["Dashboard", "dashboard.html", ""],
     ["Sales Intake", "index.html", ""],
     ["Saved Events", "saved-events.html", ""],
-    ["Pre Cost", "pre-cost-planning.html", ""],
+    ["Pre Cost Planning", "pre-cost-planning.html", ""],
     ["Petty Cash", "petty-cash.html", ""],
-    ["Bill Submission", "bill-submission.html", ""],
     ["Financial Control", "financial-control.html", ""],
-    ["Analytics", "analytics.html", ""],
     ["Master Persons", "master-persons.html", ""],
+    ["Bill Submission", "bill-submission.html", ""],
+    ["Analytics", "analytics.html", ""],
     ["Admin", "admin.html", "admin"],
     ["Mail Center", "mail-center.html", "admin"],
     ["FAQ", "faq.html", ""]
@@ -53,12 +56,13 @@
     const nav = document.querySelector(".top-nav-links");
     if (!nav) return;
     const current = location.pathname.split("/").pop() || "dashboard.html";
-    const wanted = NAV_ITEMS.filter(([, , role]) => !(role === "admin" && user.role !== "admin"));
+    // Compare against the FULL item list (admin items included) so the static HTML
+    // nav matches for every user — admin items are hidden in place below, never
+    // filtered out, so the DOM order stays stable and no rebuild/reflow happens.
     const existing = [...nav.querySelectorAll("a")].map((link) => [link.textContent.trim(), link.getAttribute("href") || ""]);
-    const sameNav = existing.length === wanted.length && wanted.every(([label, href], index) => existing[index] && existing[index][0] === label && existing[index][1] === href);
+    const sameNav = existing.length === NAV_ITEMS.length && NAV_ITEMS.every(([label, href], index) => existing[index] && existing[index][0] === label && existing[index][1] === href);
     if (!sameNav) nav.replaceChildren();
-    wanted.forEach(([label, href, role]) => {
-      if (role === "admin" && user.role !== "admin") return;
+    NAV_ITEMS.forEach(([label, href, role]) => {
       let link = sameNav ? [...nav.querySelectorAll("a")].find((item) => item.getAttribute("href") === href) : null;
       if (!link) {
         link = document.createElement("a");
@@ -66,9 +70,9 @@
         link.textContent = label;
         nav.append(link);
       }
-      link.className = "";
       if (role === "admin") link.dataset.adminOnly = "";
-      if (href === current || (current === "" && href === "dashboard.html")) link.className = "active";
+      link.hidden = role === "admin" && user.role !== "admin";
+      link.className = (href === current || (current === "" && href === "dashboard.html")) ? "active" : "";
       link.onclick = (event) => {
         const target = new URL(href, location.href);
         if (target.pathname === location.pathname && target.search === location.search) {
